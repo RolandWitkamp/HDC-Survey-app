@@ -62,7 +62,9 @@ textarea{resize:vertical;min-height:72px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
 
 /* Home list */
-.survey-row{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px}
+.swipe-row{position:relative;overflow:hidden;border-radius:14px;margin-bottom:10px}
+.swipe-del{position:absolute;top:0;right:0;bottom:0;width:88px;border:0;background:var(--s1);color:#fff;font-weight:700;font-size:.75rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.survey-row{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:0;position:relative;z-index:1;touch-action:pan-y;transition:transform .2s}
 .survey-row .t{flex:1;min-width:0}
 .survey-row .t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .survey-row .t span{color:var(--muted);font-size:.9rem}
@@ -309,12 +311,15 @@ function renderHome(){
   setBar(`<h1>Hotel survey</h1><button class="icon-btn" data-a="settings" aria-label="Instellingen">⚙️</button>`);
   const list=[...S.surveys].sort((a,b)=>(b.updated||0)-(a.updated||0));
   $('#app').innerHTML = list.length ? list.map(s=>{ const v=verdict(s); return `
-    <button class="survey-row" data-a="open" data-id="${s.id}">
-      <span class="stamp" data-s="${v.k}" aria-label="${v.w}">${v.t}</span>
-      <span class="t"><b>${esc(title(s))}</b>
-        <span>${esc([s.city,dateNL(s.date)].filter(Boolean).join(', '))} · ${v.w}</span>
-        <span class="status ${s.status==='verzonden'?'sent':''}">${s.status==='verzonden'?'Verzonden':'Concept'}</span></span>
-    </button>`}).join('') : `
+    <div class="swipe-row">
+      <button class="swipe-del" data-a="swipedelete" data-id="${s.id}" aria-label="Survey verwijderen">🗑️<span>Verwijderen</span></button>
+      <button class="survey-row" data-a="open" data-id="${s.id}">
+        <span class="stamp" data-s="${v.k}" aria-label="${v.w}">${v.t}</span>
+        <span class="t"><b>${esc(title(s))}</b>
+          <span>${esc([s.city,dateNL(s.date)].filter(Boolean).join(', '))} · ${v.w}</span>
+          <span class="status ${s.status==='verzonden'?'sent':''}">${s.status==='verzonden'?'Verzonden':'Concept'}</span></span>
+      </button>
+    </div>`}).join('') : `
     <div class="empty"><h2>Nog geen surveys</h2>
       <p>Start een survey bij aankomst in het hotel. Alles wordt op dit apparaat bewaard, ook zonder verbinding.</p></div>`;
   setDock(`<button class="btn primary" data-a="new">Nieuwe survey</button>`);
@@ -478,8 +483,46 @@ function renderSettings(){
   setDock('');
 }
 
+/* ---------- Swipe to delete (home list) ---------- */
+const SWIPE_W=88;
+let swipe=null, suppressClick=false;
+function closeSwipes(){ document.querySelectorAll('.swipe-row.open').forEach(w=>{ w.classList.remove('open'); w.querySelector('.survey-row').style.transform=''; }); }
+document.addEventListener('pointerdown', e=>{
+  const row=e.target.closest('.survey-row'); const wrap=row?.closest('.swipe-row'); if(!wrap) return;
+  document.querySelectorAll('.swipe-row.open').forEach(w=>{ if(w!==wrap){ w.classList.remove('open'); w.querySelector('.survey-row').style.transform=''; } });
+  const wasOpen=wrap.classList.contains('open');
+  swipe={row,wrap,startX:e.clientX,startY:e.clientY,dragging:false,base:wasOpen?-SWIPE_W:0,x:wasOpen?-SWIPE_W:0};
+});
+document.addEventListener('pointermove', e=>{
+  if(!swipe) return;
+  const dx=e.clientX-swipe.startX, dy=e.clientY-swipe.startY;
+  if(!swipe.dragging){
+    if(Math.abs(dy)>Math.abs(dx)){ swipe=null; return; }
+    if(Math.abs(dx)<8) return;
+    swipe.dragging=true; swipe.row.style.transition='none';
+  }
+  swipe.x=Math.max(-SWIPE_W-16,Math.min(0,swipe.base+dx));
+  swipe.row.style.transform=`translateX(${swipe.x}px)`;
+});
+document.addEventListener('pointerup', ()=>{
+  if(!swipe) return;
+  const {row,wrap,dragging,x}=swipe;
+  row.style.transition='';
+  if(dragging){
+    const openNow = x < -SWIPE_W/2;
+    row.style.transform = openNow? `translateX(-${SWIPE_W}px)` : '';
+    wrap.classList.toggle('open',openNow);
+    suppressClick=true; setTimeout(()=>suppressClick=false,0);
+  }
+  swipe=null;
+});
+document.addEventListener('click', e=>{
+  if(!e.target.closest('.swipe-row')) closeSwipes();
+});
+
 /* ---------- Events ---------- */
 document.addEventListener('click', e=>{
+  if(suppressClick) return;
   const b=e.target.closest('[data-a]'); if(!b) return;
   const a=b.dataset.a, s=cur();
   if(a==='home'){view={name:'home'};render();}
@@ -488,7 +531,8 @@ document.addEventListener('click', e=>{
     const n={id:uid(),hotel:'',city:'',reps:'',date:today(),inspector:S.inspector,f:{},notes:{},photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''}};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
   }
-  else if(a==='open'){view={name:'edit',id:b.dataset.id};render();}
+  else if(a==='open'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'edit',id:b.dataset.id}; render(); }
+  else if(a==='swipedelete'){ const sv=S.surveys.find(x=>x.id===b.dataset.id); if(sv && confirm(`Survey "${title(sv)}" verwijderen?`)){ S.surveys=S.surveys.filter(x=>x.id!==sv.id); persist(); render(); toast('Survey verwijderd'); } else closeSwipes(); }
   else if(a==='report'){view={name:'report',id:s.id};render();}
   else if(a==='back-edit'){view={name:'edit',id:s.id};render();}
   else if(a==='delete'){ if(confirm(`Survey "${title(s)}" verwijderen?`)){ S.surveys=S.surveys.filter(x=>x.id!==s.id); persist(); view={name:'home'}; render(); toast('Survey verwijderd'); } }
@@ -641,7 +685,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.0.2';
+const APP_VERSION='1.0.4';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
