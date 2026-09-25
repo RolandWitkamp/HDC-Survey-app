@@ -444,11 +444,13 @@ function renderReport(){
     </section>
     <section class="panel">
       <h2>Versturen</h2>
-      <p class="hint" style="margin-bottom:12px">Het rapport en de mailtekst zijn in het Engels, net als de checklist. <b>Delen met PDF</b> opent je mail-app met de PDF als bijlage; de ontvangers staan dan op je klembord. <b>Mail opstellen</b> vult ontvangers en tekst in, zonder bijlage.</p>
+      <p class="hint" style="margin-bottom:12px">Het rapport en de mailtekst zijn in het Engels, net als de checklist.<br><br>
+      <b>Aanbevolen:</b> stap 1, sla de PDF op. Stap 2, stel de mail op - ontvangers, cc en onderwerp staan dan al klaar, jij voegt alleen de opgeslagen PDF nog toe als bijlage.<br><br>
+      <b>Delen met PDF</b> is een alternatief dat de PDF direct meestuurt, maar dan moet je de ontvangers (staan op je klembord) en het onderwerp zelf plakken of typen.</p>
       <div class="actions">
-        <button class="btn primary" data-a="share">Delen met PDF</button>
-        <button class="btn" data-a="mail">Mail opstellen</button>
-        <button class="btn" data-a="savepdf">PDF opslaan</button>
+        <button class="btn" data-a="savepdf">1. PDF opslaan</button>
+        <button class="btn primary" data-a="mail">2. Mail opstellen</button>
+        <button class="btn" data-a="share">Delen met PDF</button>
         <button class="btn" data-a="marksent">${s.status==='verzonden'?'Terugzetten naar concept':'Markeer als verzonden'}</button>
       </div>
     </section>`;
@@ -639,7 +641,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.0.1';
+const APP_VERSION='1.0.2';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
