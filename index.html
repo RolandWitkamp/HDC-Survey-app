@@ -142,6 +142,9 @@ textarea{resize:vertical;min-height:72px}
 .opts button.bad[aria-pressed="true"]{background:var(--s1);border-color:var(--s1);color:#fff}
 .opts.multi button[aria-pressed="true"]::before{content:"✓ "}
 .sub{margin-top:8px}
+.slider-val{font-weight:700;margin-bottom:6px}
+.slider input[type=range]{width:100%;accent-color:var(--accent)}
+.slider-labels{display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem;margin-top:2px}
 .rest{display:grid;grid-template-columns:1fr;gap:6px;padding:8px 0}
 .chips{display:flex;gap:8px;overflow-x:auto;margin:14px -16px -4px;padding:0 16px 4px;scrollbar-width:none}
 .chips a{flex:none;text-decoration:none;color:var(--ink);background:var(--soft);border-radius:99px;padding:6px 12px;font-size:.85rem;white-space:nowrap}
@@ -166,10 +169,10 @@ const YN=['Yes','No'], CMP=['Compliant','Not compliant'];
 const SECTIONS = [
   {id:'general', name:'General', fields:[
     {id:'constructionYear', label:'Construction year', type:'text', mode:'numeric'},
-    {id:'renovation', label:'Last major renovation', type:'text'},
+    {id:'renovation', label:'Last major renovation', type:'text', mode:'numeric'},
     {id:'roomsFloors', label:'Number of rooms/floors', type:'text', ph:'bijv. 312 / 14'},
-    {id:'connecting', label:'Connecting doors', type:'choice', options:['Yes','No','Able to exclude','Not able to exclude'], flag:['Not able to exclude']},
-    {id:'guests', label:'Guests', type:'choice', options:['Corporate','Leisure','Mix corporate/leisure']},
+    {id:'connecting', label:'Connecting doors', type:'choice', options:['Yes','No'], detail:{when:'Yes', type:'choice', options:['Able to exclude','Not able to exclude'], flag:['Not able to exclude']}},
+    {id:'guests', label:'Guests', type:'slider', min:0, max:100, step:5, left:'Business', right:'Leisure'},
     {id:'management', label:'Management', type:'text'},
     {id:'airlineExp', label:'Airline experience', type:'area'}]},
   {id:'facilities', name:'Facilities', fields:[
@@ -272,7 +275,7 @@ function filled(s,f){
   if(f.type==='restaurants') return [...Array(f.rows)].some((_,i)=>nonEmpty(s.f[`${f.id}.${i}.name`]));
   return nonEmpty(v) || (f.extra && nonEmpty(s.f[f.id+'.extra']));
 }
-const isFlag = (s,f)=>!!f.flag && f.flag.includes(s.f[f.id]);
+const isFlag = (s,f)=>(!!f.flag && f.flag.includes(s.f[f.id])) || (!!f.detail?.flag && s.f[f.id]===f.detail.when && f.detail.flag.includes(s.f[f.id+'.detail']));
 const flags = s=>ALL.filter(f=>isFlag(s,f));
 const doneCount = (s,fs=ALL)=>fs.filter(f=>filled(s,f)).length;
 function verdict(s){ const c=s.f.cao, n=flags(s).length;
@@ -281,11 +284,14 @@ function verdict(s){ const c=s.f.cao, n=flags(s).length;
   if(c==='Yes') return {k:'ok', t:'✓', w:'CAO-compliant'};
   return {k:'0', t:'–', w:'CAO nog niet beoordeeld'}; }
 
+const sliderText = (f,val)=>`${val}% ${f.left} · ${100-val}% ${f.right}`;
+
 /* Human-readable value (used in report, mail and PDF) */
 function valueText(s,f){
   const v=s.f[f.id];
   if(f.type==='pair') return f.parts.map((p,i)=>nonEmpty(s.f[`${f.id}.${i}`])?`${p}: ${s.f[`${f.id}.${i}`]}`:'').filter(Boolean).join('  |  ');
   if(f.type==='restaurants') return [...Array(f.rows)].map((_,i)=>{ const n=s.f[`${f.id}.${i}.name`]; if(!nonEmpty(n)) return ''; const m=s.f[`${f.id}.${i}.meals`]||[]; return n+(m.length?` (${m.join(', ')})`:''); }).filter(Boolean).join('\n');
+  if(f.type==='slider') return nonEmpty(v) ? sliderText(f,Number(v)) : '';
   let t = Array.isArray(v)? v.join(', ') : (v||'');
   if(f.other && (Array.isArray(v)?v.includes(f.other):v===f.other) && nonEmpty(s.f[f.id+'.other'])) t+=`: ${s.f[f.id+'.other']}`;
   if(f.detail && v===f.detail.when && nonEmpty(s.f[f.id+'.detail'])) t+=` (${s.f[f.id+'.detail']})`;
@@ -365,11 +371,26 @@ function fieldHTML(s,f){
   else if(f.type==='restaurants') body=[...Array(f.rows)].map((_,i)=>{ const m=s.f[`${k}.${i}.meals`]||[];
     return `<div class="rest"><input class="inp" data-k="${k}.${i}.name" value="${esc(s.f[`${k}.${i}.name`])}" placeholder="Restaurant ${i+1}" aria-label="Restaurant ${i+1}">
       <div class="opts multi">${f.meals.map(o=>`<button data-a="meal" data-id="${k}" data-i="${i}" data-v="${o}" aria-pressed="${m.includes(o)}">${o}</button>`).join('')}</div></div>`; }).join('');
+  else if(f.type==='slider'){
+    const val = nonEmpty(v) ? Number(v) : Math.round((f.min+f.max)/2/f.step)*f.step;
+    body = `<div class="slider">
+      <div class="slider-val" data-sliderval="${k}">${sliderText(f,val)}</div>
+      <input type="range" data-k="${k}" min="${f.min}" max="${f.max}" step="${f.step}" value="${val}" aria-label="${esc(f.label)}">
+      <div class="slider-labels"><span>${esc(f.left)}</span><span>${esc(f.right)}</span></div>
+    </div>`;
+  }
   else body=optButtons(s,f,f.type==='multi');
   const showOther = f.other && (Array.isArray(v)?v.includes(f.other):v===f.other);
   const showDetail = f.detail && v===f.detail.when;
   if(showOther) body+=`<input class="inp sub" data-k="${k}.other" value="${esc(s.f[k+'.other'])}" placeholder="Specificeer">`;
-  if(showDetail) body+=`<input class="inp sub" data-k="${k}.detail" value="${esc(s.f[k+'.detail'])}" placeholder="${f.detail.label}, bijv. 06:00-23:00">`;
+  if(showDetail){
+    if(f.detail.type==='choice'){
+      const dv=s.f[k+'.detail'];
+      body+=`<div class="opts sub" role="group" aria-label="${esc(f.detail.label||f.label)}">${f.detail.options.map(o=>{
+        const on=dv===o;
+        return `<button data-a="pickdetail" data-id="${k}" data-v="${esc(o)}" aria-pressed="${on}" class="${f.detail.flag?.includes(o)?'bad':''}">${esc(o)}</button>`; }).join('')}</div>`;
+    } else body+=`<input class="inp sub" data-k="${k}.detail" value="${esc(s.f[k+'.detail'])}" placeholder="${f.detail.label}, bijv. 06:00-23:00">`;
+  }
   if(f.extra) body+=`<label class="f">${f.extra}<input data-k="${k}.extra" value="${esc(s.f[k+'.extra'])}"></label>`;
   const note=s.notes[k]; const showNote = !!note || flagged;
   const canNote = f.type!=='area';
@@ -471,6 +492,7 @@ document.addEventListener('click', e=>{
   else if(a==='delete'){ if(confirm(`Survey "${title(s)}" verwijderen?`)){ S.surveys=S.surveys.filter(x=>x.id!==s.id); persist(); view={name:'home'}; render(); toast('Survey verwijderd'); } }
   else if(a==='pick'){ const id=b.dataset.id, v=b.dataset.v; s.f[id] = s.f[id]===v?undefined:v; if(s.f[id]===undefined) delete s.f[id]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='toggle'){ const id=b.dataset.id, v=b.dataset.v; const arr=s.f[id]||[]; s.f[id]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
+  else if(a==='pickdetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; s.f[dk] = s.f[dk]===v?undefined:v; if(s.f[dk]===undefined) delete s.f[dk]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='meal'){ const k=`${b.dataset.id}.${b.dataset.i}.meals`, v=b.dataset.v; const arr=s.f[k]||[]; s.f[k]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); b.setAttribute('aria-pressed',s.f[k].includes(v)); }
   else if(a==='note'){ const id=b.dataset.id; s.notes[id]=s.notes[id]||''; const t=document.createElement('textarea'); t.className='inp note'; t.dataset.note=id; t.rows=2; t.placeholder='Opmerking'; b.replaceWith(t); t.focus(); }
   else if(a==='delphoto'){ s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); b.closest('.photo').remove(); }
@@ -484,7 +506,9 @@ document.addEventListener('click', e=>{
 });
 document.addEventListener('input', e=>{
   const el=e.target, s=cur(), d=el.dataset;
-  if(d.k){ const was=s? doneCount(s):0; s.f[d.k]=el.value; touch(s); if(doneCount(s)!==was) refreshStats(); }
+  if(d.k){ const was=s? doneCount(s):0; s.f[d.k]=el.value; touch(s);
+    const fld=FIELD[d.k]; if(fld?.type==='slider'){ const sv=document.querySelector(`[data-sliderval="${d.k}"]`); if(sv) sv.textContent=sliderText(fld,Number(el.value)); }
+    if(doneCount(s)!==was) refreshStats(); }
   else if(d.note){ s.notes[d.note]=el.value; touch(s); }
   else if(d.top){
     if(d.top==='extra'){ s.recip.extra=el.value; }
@@ -615,7 +639,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.0.0';
+const APP_VERSION='1.0.1';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
