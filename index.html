@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Hotel survey</title>
+<title>Pillow Report</title>
 <meta name="theme-color" content="#13233A">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="Hotel survey">
+<meta name="apple-mobile-web-app-title" content="Pillow Report">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -155,6 +155,8 @@ textarea{resize:vertical;min-height:72px}
 .slider input[type=range]{width:100%;accent-color:var(--accent)}
 .slider-labels{display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem;margin-top:2px}
 .fnote{margin-top:8px}
+.fnote-head{display:flex;justify-content:flex-end}
+.fnote-head .link{font-size:.85rem;padding:2px 0}
 .fn-row{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:8px}
 .fn-score{flex:1;min-width:160px}
 .fn-lbl{display:block;font-size:.85rem;color:var(--muted);margin-bottom:2px}
@@ -279,7 +281,7 @@ const store = {
 };
 let S = { surveys:[], groups:[], inspector:'' };
 let view = {name:'home', id:null};
-let openNotes = new Set();
+let noteOverride = new Map();
 let saveTimer=null;
 function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('inspector',S.inspector); },300); }
 
@@ -341,7 +343,7 @@ function render(){ window.scrollTo(0,0);
   ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings})[view.name](); }
 
 function renderHome(){
-  setBar(`<h1>Hotel survey</h1><button class="icon-btn" data-a="settings" aria-label="Instellingen">⚙️</button>`);
+  setBar(`<h1>Pillow Report</h1><button class="icon-btn" data-a="settings" aria-label="Instellingen">⚙️</button>`);
   const list=[...S.surveys].sort((a,b)=>(b.updated||0)-(a.updated||0));
   $('#app').innerHTML = list.length ? list.map(s=>{ const v=verdict(s); return `
     <div class="swipe-row">
@@ -390,7 +392,7 @@ function renderEdit(){
       <div class="sec-body" hidden>
         ${sec.fields.map(f=>fieldHTML(s,f)).join('')}
         <div class="photos" data-photos="${sec.id}">${photosHTML(s,sec.id)}</div>
-        <label class="add-photo">📷 Foto toevoegen<input type="file" accept="image/*" capture="environment" multiple data-photo="${sec.id}"></label>
+        <label class="add-photo">📷 Foto toevoegen<input type="file" accept="image/*" multiple data-photo="${sec.id}"></label>
       </div>
     </section>`).join('')}`;
   setDock(`<button class="btn primary" data-a="report">Rapport en delen</button>`);
@@ -452,11 +454,13 @@ function fieldHTML(s,f){
   }
   if(f.extra) body+=`<label class="f">${f.extra}<input data-k="${k}.extra" value="${esc(s.f[k+'.extra'])}"></label>`;
   const note=s.notes[k], sc=s.scores[k], comp=s.compliance[k];
-  const showNote = !!note || flagged || sc!=null || !!comp || openNotes.has(k);
+  const auto = !!note || flagged || sc!=null || !!comp;
+  const showNote = noteOverride.has(k) ? noteOverride.get(k) : auto;
   return `<div class="field" data-field="${k}">
     <div class="field-label"><span>${esc(f.label)}</span>${flagged?'<span class="flagtag">Bevinding</span>':''}</div>
     ${body}
     ${showNote?`<div class="fnote">
+        <div class="fnote-head"><button type="button" class="link" data-a="hidenote" data-id="${k}">Opmerking inklappen</button></div>
         <textarea class="inp note" data-note="${k}" rows="2" placeholder="${flagged?'Wat is er niet in orde?':'Opmerking'}">${esc(note)}</textarea>
         <div class="fn-row">
           <div class="fn-score"><span class="fn-lbl">Score <b data-scoreval="${k}">${sc??'–'}</b>/10</span>
@@ -539,7 +543,7 @@ function renderSettings(){
         <label class="f">Cc<input data-set="gcc" data-gid="${g.id}" value="${esc(g.cc)}" type="email" multiple></label>
         <button class="link" style="color:var(--s1);margin-top:8px" data-a="delgroup" data-gid="${g.id}">Groep verwijderen</button></div>`).join('')}
       <button class="btn wide" style="margin-top:16px" data-a="addgroup">Groep toevoegen</button></section>
-    <section class="panel"><h2>Back-up</h2><p class="hint">Surveys staan alleen op dit apparaat. Exporteer ze af en toe.</p>
+    <section class="panel"><h2>Back-up</h2><p class="hint">Surveys staan alleen op dit apparaat. Exporteer ze af en toe. Tip: tik bij exporteren op AirDrop om snel over te zetten naar je andere iPhone of iPad.</p>
       <button class="btn wide" style="margin-top:12px" data-a="export">Alles exporteren (JSON)</button>
       <label class="btn wide" style="margin-top:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">Back-up terugzetten<input type="file" accept="application/json,.json" data-import style="position:absolute;width:1px;height:1px;opacity:0"></label>
       <p class="hint" style="margin-top:10px">Terugzetten voegt surveys toe en overschrijft surveys met hetzelfde ID. Zo kun je ook surveys van een collega inladen.</p></section>
@@ -614,7 +618,8 @@ document.addEventListener('click', e=>{
   else if(a==='toggle'){ const id=b.dataset.id, v=b.dataset.v; const arr=s.f[id]||[]; s.f[id]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='pickdetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; s.f[dk] = s.f[dk]===v?undefined:v; if(s.f[dk]===undefined) delete s.f[dk]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='meal'){ const k=`${b.dataset.id}.${b.dataset.i}.meals`, v=b.dataset.v; const arr=s.f[k]||[]; s.f[k]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); b.setAttribute('aria-pressed',s.f[k].includes(v)); }
-  else if(a==='note'){ const id=b.dataset.id; openNotes.add(id); rerenderField(s,id); document.querySelector(`[data-field="${id}"] textarea.note`)?.focus(); }
+  else if(a==='note'){ const id=b.dataset.id; noteOverride.set(id,true); rerenderField(s,id); document.querySelector(`[data-field="${id}"] textarea.note`)?.focus(); }
+  else if(a==='hidenote'){ noteOverride.set(b.dataset.id,false); rerenderField(s,b.dataset.id); }
   else if(a==='pickcompliance'){ const id=b.dataset.id, v=b.dataset.v; s.compliance[id] = s.compliance[id]===v?undefined:v; if(s.compliance[id]===undefined) delete s.compliance[id]; touch(s);
     b.closest('.fn-comp').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', String(x.dataset.v===s.compliance[id]))); }
   else if(a==='togglesec'||a==='toggleacc'){ const body=b.nextElementSibling; const wasHidden=body.hidden; body.hidden=!wasHidden; b.setAttribute('aria-expanded',String(wasHidden)); }
@@ -658,7 +663,7 @@ document.addEventListener('change', async e=>{
       let n=0; d.surveys.forEach(x=>{ if(!x?.id||!x.f) return; const i=S.surveys.findIndex(y=>y.id===x.id); if(i>=0) S.surveys[i]=x; else S.surveys.push(x); n++; });
       (d.groups||[]).forEach(g=>{ if(g?.id && !S.groups.some(y=>y.id===g.id)) S.groups.push(g); });
       persist(); toast(`${n} survey${n===1?'':'s'} teruggezet`); render();
-    }catch(err){ toast('Dit bestand is geen back-up van Hotel survey.'); }
+    }catch(err){ toast('Dit bestand is geen back-up van Pillow Report.'); }
     el.value=''; return;
   }
   if(el.dataset.grp){ const id=el.dataset.grp; s.recip.groups = el.checked ? [...new Set([...s.recip.groups,id])] : s.recip.groups.filter(x=>x!==id); touch(s); }
@@ -686,10 +691,10 @@ function recipients(s){
   return {to,cc};
 }
 const caoText = s=>s.f.cao==='Yes'?'Yes':s.f.cao==='No'?'No':'Not assessed';
-function subject(s){ return `Hotel survey ${title(s)}${s.city?' ('+s.city+')':''} - ${dateNL(s.date)}`; }
+function subject(s){ return `Pillow Report ${title(s)}${s.city?' ('+s.city+')':''} - ${dateNL(s.date)}`; }
 function mailBody(s){
   const fl=flags(s);
-  const lines=[`Hotel survey: ${title(s)}${s.city?' ('+s.city+')':''}`,
+  const lines=[`Pillow Report: ${title(s)}${s.city?' ('+s.city+')':''}`,
     `Date: ${dateNL(s.date)}${s.inspector?' | Surveyed by: '+s.inspector:''}${s.reps?' | Hodaco Rep: '+s.reps:''}`,
     `CAO compliant: ${caoText(s)}`, '',
     fl.length?`Findings (${fl.length}):`:'Findings: none', ...fl.map(f=>`- ${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`)];
@@ -760,10 +765,11 @@ function makePdf(s){
       rowH=Math.max(rowH,h+9); if(col===1){y+=rowH;rowH=0;col=0;} else col=1; });
   }
   const n=doc.getNumberOfPages();
-  for(let i=1;i<=n;i++){ doc.setPage(i); setF(8,'normal',[140,150,165]); doc.text(`${title(s)} - ${dateNL(s.date)}`,M,H-8); doc.text(`${i} / ${n}`,W-M,H-8,{align:'right'}); }
+  for(let i=1;i<=n;i++){ doc.setPage(i); setF(8,'normal',[140,150,165]); doc.text(`${title(s)} - ${dateNL(s.date)}`,M,H-8);
+    doc.text('made by Pillow Report',W/2,H-8,{align:'center'}); doc.text(`${i} / ${n}`,W-M,H-8,{align:'right'}); }
   return doc.output('blob');
 }
-const pdfName = s=>`Hotel survey ${title(s).replace(/[\\/:*?"<>|]/g,'')} ${s.city||''} ${s.date||''}.pdf`.replace(/\s+/g,' ');
+const pdfName = s=>`Pillow Report ${title(s).replace(/[\\/:*?"<>|]/g,'')} ${s.city||''} ${s.date||''}.pdf`.replace(/\s+/g,' ');
 
 async function sharePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
@@ -776,7 +782,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.1.0';
+const APP_VERSION='1.2.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }

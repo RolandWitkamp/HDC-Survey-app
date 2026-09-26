@@ -1,6 +1,6 @@
 {
-  "name": "Hotel survey",
-  "short_name": "Hotel survey",
+  "name": "Pillow Report",
+  "short_name": "Pillow Report",
   "description": "Crew hotel survey volgens de Survey Checklist 2025, met PDF-rapport.",
   "start_url": "./",
   "scope": "./",
