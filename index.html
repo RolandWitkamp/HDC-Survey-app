@@ -82,7 +82,14 @@ textarea{resize:vertical;min-height:72px}
 .progress i{display:block;height:100%;background:var(--accent);transition:width .2s}
 
 /* Category */
-.cat-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:4px}
+.cat-head{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;border:0;background:none;padding:0;text-align:left}
+.chev{color:var(--muted);flex:none;transition:transform .15s}
+.cat-head[aria-expanded="true"] .chev,.acc-head[aria-expanded="true"] .chev{transform:rotate(180deg)}
+.sec-body{padding-top:10px}
+.acc{border:1px solid var(--line);border-radius:10px;margin-top:10px;overflow:hidden}
+.acc:first-child{margin-top:0}
+.acc-head{display:flex;justify-content:space-between;align-items:center;width:100%;border:0;background:var(--bg);padding:10px 12px;font-weight:700;text-align:left}
+.acc-body{padding:12px}
 .cat-avg{font-weight:700;font-variant-numeric:tabular-nums;color:var(--muted)}
 .item{padding:14px 0;border-top:1px solid var(--line)}
 .item:first-of-type{border-top:0}
@@ -147,11 +154,22 @@ textarea{resize:vertical;min-height:72px}
 .slider-val{font-weight:700;margin-bottom:6px}
 .slider input[type=range]{width:100%;accent-color:var(--accent)}
 .slider-labels{display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem;margin-top:2px}
+.fnote{margin-top:8px}
+.fn-row{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:8px}
+.fn-score{flex:1;min-width:160px}
+.fn-lbl{display:block;font-size:.85rem;color:var(--muted);margin-bottom:2px}
+.fn-lbl b{color:var(--ink)}
+.fn-score input[type=range]{width:100%;accent-color:var(--accent)}
+.fn-comp{flex:none}
+.ta-wrap{position:relative}
+.ta-list{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--line);border-radius:10px;max-height:220px;overflow-y:auto;z-index:6;box-shadow:0 6px 18px rgba(0,0,0,.15)}
+.ta-list button{display:block;width:100%;text-align:left;border:0;background:none;border-top:1px solid var(--line);padding:10px 12px;font-weight:400}
+.ta-list button:first-child{border-top:0}
 .rest{display:grid;grid-template-columns:1fr;gap:6px;padding:8px 0}
 .chips{display:flex;gap:8px;overflow-x:auto;margin:14px -16px -4px;padding:0 16px 4px;scrollbar-width:none}
-.chips a{flex:none;text-decoration:none;color:var(--ink);background:var(--soft);border-radius:99px;padding:6px 12px;font-size:.85rem;white-space:nowrap}
-.chips a b{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:400;margin-left:4px}
-.chips a.has-flag b{color:var(--s1);font-weight:700}
+.chips button{flex:none;border:0;color:var(--ink);background:var(--soft);border-radius:99px;padding:6px 12px;font-size:.85rem;white-space:nowrap}
+.chips button b{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:400;margin-left:4px}
+.chips button.has-flag b{color:var(--s1);font-weight:700}
 .sec-meta{font-size:.9rem;color:var(--muted);font-variant-numeric:tabular-nums}
 .sec-meta .fl{color:var(--s1);font-weight:700}
 .stamp[data-s="ok"]{background:var(--s5)}.stamp[data-s="warn"]{background:var(--s2)}.stamp[data-s="bad"]{background:var(--s1)}
@@ -165,20 +183,24 @@ textarea{resize:vertical;min-height:72px}
 
 <script>
 /* ---------- Checklist: follows Survey_Checklist_2025 ----------
-   type: text | area | choice | multi | pair | restaurants
-   flag: answers that count as a finding (shown in red, listed in report)   */
+   type: text | area | choice | multi | pair | restaurants | slider | mealtimes
+   detail.type: choice | search | (text, default)
+   flag: answers that count as a finding (shown in red, listed in report)
+   scores/compliance: optional 0-10 score and compliant/non-compliant judgement per field, set via "+ opmerking"   */
 const YN=['Yes','No'], CMP=['Compliant','Not compliant'];
+const AIRLINES=['Aegean Airlines','Aer Lingus','Aeroflot','Aeromexico','Air Algerie','Air Astana','Air Baltic','Air Canada','Air China','Air Europa','Air France','Air India','Air New Zealand','Air Serbia','Air Transat','Alaska Airlines','Alitalia (ITA Airways)','All Nippon Airways (ANA)','American Airlines','Asiana Airlines','Austrian Airlines','Avianca','Azerbaijan Airlines','Bangkok Airways','Batik Air','British Airways','Brussels Airlines','Bulgaria Air','Cathay Pacific','Cebu Pacific','China Airlines','China Eastern Airlines','China Southern Airlines','Condor','Copa Airlines','Croatia Airlines','Delta Air Lines','EgyptAir','EL AL','Emirates','Ethiopian Airlines','Etihad Airways','Eurowings','EVA Air','Finnair','flydubai','Garuda Indonesia','Gulf Air','Hainan Airlines','Hawaiian Airlines','Hong Kong Airlines','Iberia','Icelandair','IndiGo','Japan Airlines (JAL)','Jet2','JetBlue','Jetstar Airways','Juneyao Airlines','Kenya Airways','KLM Royal Dutch Airlines','Korean Air','Kuwait Airways','LATAM Airlines','LOT Polish Airlines','Lufthansa','Luxair','Malaysia Airlines','Malta Air','Middle East Airlines','Norwegian Air','Oman Air','Pakistan International Airlines','Pegasus Airlines','Philippine Airlines','Qantas','Qatar Airways','Royal Air Maroc','Royal Brunei Airlines','Royal Jordanian','RwandAir','Ryanair','SAS Scandinavian Airlines','Saudia','Scoot','Shenzhen Airlines','Singapore Airlines','South African Airways','Southwest Airlines','SpiceJet','Spirit Airlines','SriLankan Airlines','Sun Country Airlines','Swiss International Air Lines','TAAG Angola Airlines','TAP Air Portugal','Thai Airways','Transavia','Tunisair','Turkish Airlines','Ukraine International Airlines','United Airlines','Uzbekistan Airways','Vietnam Airlines','Virgin Atlantic','Virgin Australia','Vistara','Vueling','WestJet','Wizz Air','Xiamen Airlines'];
 const SECTIONS = [
   {id:'general', name:'General', fields:[
     {id:'constructionYear', label:'Construction year', type:'text', mode:'numeric'},
     {id:'renovation', label:'Last major renovation', type:'text', mode:'numeric'},
-    {id:'roomsFloors', label:'Number of rooms/floors', type:'text', ph:'bijv. 312 / 14'},
+    {id:'numRooms', label:'Number of rooms', type:'text', mode:'numeric'},
+    {id:'numFloors', label:'Number of floors', type:'text', mode:'numeric'},
     {id:'connecting', label:'Connecting doors', type:'choice', options:['Yes','No'], detail:{when:'Yes', type:'choice', options:['Able to exclude','Not able to exclude'], flag:['Not able to exclude']}},
     {id:'guests', label:'Guests', type:'slider', min:0, max:100, step:5, left:'Business', right:'Leisure'},
     {id:'management', label:'Management', type:'text'},
-    {id:'airlineExp', label:'Airline experience', type:'area'}]},
+    {id:'airlineExp', label:'Airline experience', type:'choice', options:YN, detail:{when:'Yes', type:'search'}}]},
   {id:'facilities', name:'Facilities', fields:[
-    {id:'breakfastHours', label:'Breakfast hours', type:'pair', parts:['Mo-Fri','Sa-Su'], ph:'06:00-10:30'},
+    {id:'mealHours', label:'Meal times', type:'mealtimes', meals:['Breakfast','Lunch','Dinner'], days:['Mo-Fri','Sa-Su']},
     {id:'breakfastType', label:'Breakfast type', type:'choice', options:['Buffet','A la carte','Other'], other:'Other'},
     {id:'extBreakfast', label:'Extended breakfast', type:'choice', options:YN},
     {id:'roomService', label:'Room service', type:'choice', options:['24 hrs','Limited hours','No room service'], detail:{when:'Limited hours', label:'Hours'}},
@@ -257,6 +279,7 @@ const store = {
 };
 let S = { surveys:[], groups:[], inspector:'' };
 let view = {name:'home', id:null};
+let openNotes = new Set();
 let saveTimer=null;
 function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('inspector',S.inspector); },300); }
 
@@ -267,7 +290,7 @@ const uid = ()=>Math.random().toString(36).slice(2,10);
 const today = ()=>new Date().toISOString().slice(0,10);
 const dateNL = d=>{ if(!d) return ''; const [y,m,dd]=d.split('-'); return `${dd}-${m}-${y}`; };
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),3800); }
-const cur = ()=>S.surveys.find(s=>s.id===view.id);
+const cur = ()=>{ const s=S.surveys.find(x=>x.id===view.id); if(s){ s.scores=s.scores||{}; s.compliance=s.compliance||{}; } return s; };
 const title = s=>s.hotel||'Naamloos hotel';
 const nonEmpty = v=>Array.isArray(v)?v.length>0:(v!=null&&String(v).trim()!=='');
 
@@ -275,6 +298,7 @@ function filled(s,f){
   const v=s.f[f.id];
   if(f.type==='pair') return f.parts.some((_,i)=>nonEmpty(s.f[`${f.id}.${i}`]));
   if(f.type==='restaurants') return [...Array(f.rows)].some((_,i)=>nonEmpty(s.f[`${f.id}.${i}.name`]));
+  if(f.type==='mealtimes') return f.meals.some((_,mi)=>f.days.some((_,di)=>nonEmpty(s.f[`${f.id}.${mi}.${di}.from`])||nonEmpty(s.f[`${f.id}.${mi}.${di}.to`])));
   return nonEmpty(v) || (f.extra && nonEmpty(s.f[f.id+'.extra']));
 }
 const isFlag = (s,f)=>(!!f.flag && f.flag.includes(s.f[f.id])) || (!!f.detail?.flag && s.f[f.id]===f.detail.when && f.detail.flag.includes(s.f[f.id+'.detail']));
@@ -285,6 +309,11 @@ function verdict(s){ const c=s.f.cao, n=flags(s).length;
   if(n) return {k:'warn', t:String(n), w:`${n} bevinding${n>1?'en':''}`};
   if(c==='Yes') return {k:'ok', t:'✓', w:'CAO-compliant'};
   return {k:'0', t:'–', w:'CAO nog niet beoordeeld'}; }
+function avgScore(s){ const vals=Object.values(s.scores||{}).filter(v=>v!=null); return vals.length? vals.reduce((a,b)=>a+b,0)/vals.length : null; }
+function sectionCompliance(s,sec){ const vals=sec.fields.map(f=>s.compliance?.[f.id]).filter(Boolean);
+  if(vals.includes('Non-compliant')) return 'Non-compliant';
+  if(vals.includes('Compliant')) return 'Compliant';
+  return 'Not assessed'; }
 
 const sliderText = (f,val)=>`${val}% ${f.left} · ${100-val}% ${f.right}`;
 
@@ -294,6 +323,10 @@ function valueText(s,f){
   if(f.type==='pair') return f.parts.map((p,i)=>nonEmpty(s.f[`${f.id}.${i}`])?`${p}: ${s.f[`${f.id}.${i}`]}`:'').filter(Boolean).join('  |  ');
   if(f.type==='restaurants') return [...Array(f.rows)].map((_,i)=>{ const n=s.f[`${f.id}.${i}.name`]; if(!nonEmpty(n)) return ''; const m=s.f[`${f.id}.${i}.meals`]||[]; return n+(m.length?` (${m.join(', ')})`:''); }).filter(Boolean).join('\n');
   if(f.type==='slider') return nonEmpty(v) ? sliderText(f,Number(v)) : '';
+  if(f.type==='mealtimes') return f.meals.map((meal,mi)=>{
+    const parts=f.days.map((day,di)=>{ const from=s.f[`${f.id}.${mi}.${di}.from`],to=s.f[`${f.id}.${mi}.${di}.to`];
+      return (nonEmpty(from)||nonEmpty(to))?`${day} ${from||'?'}-${to||'?'}`:''; }).filter(Boolean).join(', ');
+    return parts?`${meal}: ${parts}`:''; }).filter(Boolean).join('\n');
   let t = Array.isArray(v)? v.join(', ') : (v||'');
   if(f.other && (Array.isArray(v)?v.includes(f.other):v===f.other) && nonEmpty(s.f[f.id+'.other'])) t+=`: ${s.f[f.id+'.other']}`;
   if(f.detail && v===f.detail.when && nonEmpty(s.f[f.id+'.detail'])) t+=` (${s.f[f.id+'.detail']})`;
@@ -344,20 +377,26 @@ function renderEdit(){
         <label class="f">City code<input data-top="city" value="${esc(s.city)}" autocapitalize="characters" maxlength="3" placeholder="bijv. NBO"></label>
         <label class="f">Datum<input type="date" data-top="date" value="${esc(s.date)}"></label>
       </div>
-      <label class="f">Hodaco/NI reps<input data-top="reps" value="${esc(s.reps)}"></label>
-      <label class="f">Inspecteur<input data-top="inspector" value="${esc(s.inspector)}"></label>
+      <label class="f">Hodaco Rep<input data-top="reps" value="${esc(s.reps)}"></label>
+      <label class="f">NI Rep<input data-top="inspector" value="${esc(s.inspector)}"></label>
     </section>
     ${SECTIONS.map(sec=>`
     <section class="panel" id="sec-${sec.id}">
-      <div class="cat-head"><h2>${sec.name}</h2><span class="sec-meta" data-meta="${sec.id}">${metaHTML(s,sec)}</span></div>
-      ${sec.fields.map(f=>fieldHTML(s,f)).join('')}
-      <div class="photos" data-photos="${sec.id}">${photosHTML(s,sec.id)}</div>
-      <label class="add-photo">📷 Foto toevoegen<input type="file" accept="image/*" capture="environment" multiple data-photo="${sec.id}"></label>
+      <button type="button" class="cat-head" data-a="togglesec" aria-expanded="false">
+        <h2>${sec.name}</h2>
+        <span class="sec-meta" data-meta="${sec.id}">${metaHTML(s,sec)}</span>
+        <span class="chev">▾</span>
+      </button>
+      <div class="sec-body" hidden>
+        ${sec.fields.map(f=>fieldHTML(s,f)).join('')}
+        <div class="photos" data-photos="${sec.id}">${photosHTML(s,sec.id)}</div>
+        <label class="add-photo">📷 Foto toevoegen<input type="file" accept="image/*" capture="environment" multiple data-photo="${sec.id}"></label>
+      </div>
     </section>`).join('')}`;
   setDock(`<button class="btn primary" data-a="report">Rapport en delen</button>`);
 }
 function chipsHTML(s){ return SECTIONS.map(sec=>{ const n=sec.fields.filter(f=>isFlag(s,f)).length;
-  return `<a href="#sec-${sec.id}" class="${n?'has-flag':''}">${sec.name}<b>${n?'! '+n:doneCount(s,sec.fields)+'/'+sec.fields.length}</b></a>`; }).join(''); }
+  return `<button type="button" data-a="jumpsec" data-id="${sec.id}" class="${n?'has-flag':''}">${sec.name}<b>${n?'! '+n:doneCount(s,sec.fields)+'/'+sec.fields.length}</b></button>`; }).join(''); }
 function metaHTML(s,sec){ const n=sec.fields.filter(f=>isFlag(s,f)).length;
   return `${doneCount(s,sec.fields)}/${sec.fields.length}${n?` · <span class="fl">${n} bevinding${n>1?'en':''}</span>`:''}`; }
 
@@ -384,6 +423,18 @@ function fieldHTML(s,f){
       <div class="slider-labels"><span>${esc(f.left)}</span><span>${esc(f.right)}</span></div>
     </div>`;
   }
+  else if(f.type==='mealtimes'){
+    body = f.meals.map((meal,mi)=>{ const mk=`${k}.${mi}`;
+      return `<div class="acc">
+        <button type="button" class="acc-head" data-a="toggleacc" aria-expanded="false"><span>${esc(meal)}</span><span class="chev">▾</span></button>
+        <div class="acc-body" hidden>
+          ${f.days.map((day,di)=>`<div class="grid2" style="margin-top:${di===0?'0':'8px'}">
+            <label class="f" style="margin-top:0">${esc(day)} van<input type="time" data-k="${mk}.${di}.from" value="${esc(s.f[`${mk}.${di}.from`])}"></label>
+            <label class="f" style="margin-top:0">tot<input type="time" data-k="${mk}.${di}.to" value="${esc(s.f[`${mk}.${di}.to`])}"></label>
+          </div>`).join('')}
+        </div>
+      </div>`; }).join('');
+  }
   else body=optButtons(s,f,f.type==='multi');
   const showOther = f.other && (Array.isArray(v)?v.includes(f.other):v===f.other);
   const showDetail = f.detail && v===f.detail.when;
@@ -394,16 +445,29 @@ function fieldHTML(s,f){
       body+=`<div class="opts sub" role="group" aria-label="${esc(f.detail.label||f.label)}">${f.detail.options.map(o=>{
         const on=dv===o;
         return `<button data-a="pickdetail" data-id="${k}" data-v="${esc(o)}" aria-pressed="${on}" class="${f.detail.flag?.includes(o)?'bad':''}">${esc(o)}</button>`; }).join('')}</div>`;
+    } else if(f.detail.type==='search'){
+      body+=`<div class="ta-wrap sub"><input class="inp" data-k="${k}.detail" data-ta="1" value="${esc(s.f[k+'.detail'])}" placeholder="Zoek of typ een airline" autocomplete="off">
+        <div class="ta-list" hidden></div></div>`;
     } else body+=`<input class="inp sub" data-k="${k}.detail" value="${esc(s.f[k+'.detail'])}" placeholder="${f.detail.label}, bijv. 06:00-23:00">`;
   }
   if(f.extra) body+=`<label class="f">${f.extra}<input data-k="${k}.extra" value="${esc(s.f[k+'.extra'])}"></label>`;
-  const note=s.notes[k]; const showNote = !!note || flagged;
-  const canNote = f.type!=='area';
+  const note=s.notes[k], sc=s.scores[k], comp=s.compliance[k];
+  const showNote = !!note || flagged || sc!=null || !!comp || openNotes.has(k);
   return `<div class="field" data-field="${k}">
     <div class="field-label"><span>${esc(f.label)}</span>${flagged?'<span class="flagtag">Bevinding</span>':''}</div>
     ${body}
-    ${canNote?(showNote?`<textarea class="inp note" data-note="${k}" rows="2" placeholder="${flagged?'Wat is er niet in orde?':'Opmerking'}">${esc(note)}</textarea>`
-      :`<button class="link" data-a="note" data-id="${k}">+ opmerking</button>`):''}
+    ${showNote?`<div class="fnote">
+        <textarea class="inp note" data-note="${k}" rows="2" placeholder="${flagged?'Wat is er niet in orde?':'Opmerking'}">${esc(note)}</textarea>
+        <div class="fn-row">
+          <div class="fn-score"><span class="fn-lbl">Score <b data-scoreval="${k}">${sc??'–'}</b>/10</span>
+            <input type="range" min="0" max="10" step="1" data-score="${k}" value="${sc??0}"></div>
+          <div class="opts fn-comp">
+            <button data-a="pickcompliance" data-id="${k}" data-v="Compliant" aria-pressed="${comp==='Compliant'}">Compliant</button>
+            <button data-a="pickcompliance" data-id="${k}" data-v="Non-compliant" aria-pressed="${comp==='Non-compliant'}" class="bad">Non-compliant</button>
+          </div>
+        </div>
+      </div>`
+      :`<button class="link" data-a="note" data-id="${k}">+ opmerking</button>`}
   </div>`;
 }
 function photosHTML(s,sec){
@@ -423,7 +487,7 @@ function refreshStats(){
 function renderReport(){
   const s=cur(); if(!s){view={name:'home'};return render();}
   setBar(`<button class="icon-btn" data-a="back-edit" aria-label="Terug naar survey">←</button><h1>Rapport</h1>`);
-  const v=verdict(s), fl=flags(s);
+  const v=verdict(s), fl=flags(s), avg=avgScore(s);
   if(!s.recip) s.recip={groups:[],extra:''};
   const groups = S.groups.length ? S.groups.map(g=>`
     <label class="check"><input type="checkbox" data-grp="${g.id}" ${s.recip.groups.includes(g.id)?'checked':''}>
@@ -434,9 +498,9 @@ function renderReport(){
     <section class="panel">
       <div class="summary"><span class="stamp big" data-s="${v.k}">${v.t}</span>
       <div class="txt"><b>${esc(title(s))}</b><p class="hint">${esc([s.city,dateNL(s.date),s.inspector].filter(Boolean).join(', '))}</p>
-      <p class="hint">${v.w} · ${doneCount(s)} van ${TOTAL} punten ingevuld</p></div></div>
-      <div class="bars">${SECTIONS.map(sec=>{const d=doneCount(s,sec.fields),n=sec.fields.filter(f=>isFlag(s,f)).length;
-        return `<div class="barrow"><span>${sec.name}</span><span class="track"><i style="width:${d/sec.fields.length*100}%;background:${n?'var(--s2)':'var(--accent)'}"></i></span><b>${d}/${sec.fields.length}</b></div>`}).join('')}</div>
+      <p class="hint">${v.w} · ${doneCount(s)} van ${TOTAL} punten ingevuld${avg!=null?` · Gem. score ${avg.toFixed(1)}/10`:''}</p></div></div>
+      <div class="bars">${SECTIONS.map(sec=>{const d=doneCount(s,sec.fields),n=sec.fields.filter(f=>isFlag(s,f)).length,cv=sectionCompliance(s,sec);
+        return `<div class="barrow"><span>${sec.name}</span><span class="track"><i style="width:${d/sec.fields.length*100}%;background:${n?'var(--s2)':'var(--accent)'}"></i></span><b style="color:${cv==='Non-compliant'?'var(--s1)':cv==='Compliant'?'var(--s5)':'var(--muted)'}">${cv==='Not assessed'?d+'/'+sec.fields.length:cv}</b></div>`}).join('')}</div>
     </section>
     <section class="panel"><h2>Bevindingen</h2>
       ${fl.length?`<ul class="lowlist">${fl.map(f=>`<li><b>${esc(f.label)}</b>: ${esc(valueText(s,f))}${s.notes[f.id]?' - '+esc(s.notes[f.id]):''}</li>`).join('')}</ul>`:'<p class="hint">Geen bevindingen.</p>'}
@@ -466,7 +530,7 @@ function renderSettings(){
   setBar(`<button class="icon-btn" data-a="home" aria-label="Terug">←</button><h1>Instellingen</h1>`);
   $('#app').innerHTML = `
     <section class="panel"><h2>Jouw naam</h2>
-      <label class="f">Standaard inspecteur in nieuwe surveys<input data-set="defInspector" value="${esc(S.inspector)}"></label></section>
+      <label class="f">Standaard NI Rep in nieuwe surveys<input data-set="defInspector" value="${esc(S.inspector)}"></label></section>
     <section class="panel"><h2>Vaste ontvangers</h2>
       <p class="hint">Maak groepen, bijvoorbeeld per station of afdeling. Meerdere adressen scheid je met een komma.</p>
       ${S.groups.map(g=>`<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:4px">
@@ -527,6 +591,7 @@ if('ontouchstart' in window){
 }
 document.addEventListener('click', e=>{
   if(!e.target.closest('.swipe-row')) closeSwipes();
+  if(!e.target.closest('.ta-wrap')) document.querySelectorAll('.ta-list').forEach(b=>b.hidden=true);
 });
 
 /* ---------- Events ---------- */
@@ -537,7 +602,7 @@ document.addEventListener('click', e=>{
   if(a==='home'){view={name:'home'};render();}
   else if(a==='settings'){view={name:'settings'};render();}
   else if(a==='new'){
-    const n={id:uid(),hotel:'',city:'',reps:'',date:today(),inspector:S.inspector,f:{},notes:{},photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''}};
+    const n={id:uid(),hotel:'',city:'',reps:'',date:today(),inspector:S.inspector,f:{},notes:{},scores:{},compliance:{},photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''}};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
   }
   else if(a==='open'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'edit',id:b.dataset.id}; render(); }
@@ -549,7 +614,15 @@ document.addEventListener('click', e=>{
   else if(a==='toggle'){ const id=b.dataset.id, v=b.dataset.v; const arr=s.f[id]||[]; s.f[id]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='pickdetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; s.f[dk] = s.f[dk]===v?undefined:v; if(s.f[dk]===undefined) delete s.f[dk]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='meal'){ const k=`${b.dataset.id}.${b.dataset.i}.meals`, v=b.dataset.v; const arr=s.f[k]||[]; s.f[k]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); b.setAttribute('aria-pressed',s.f[k].includes(v)); }
-  else if(a==='note'){ const id=b.dataset.id; s.notes[id]=s.notes[id]||''; const t=document.createElement('textarea'); t.className='inp note'; t.dataset.note=id; t.rows=2; t.placeholder='Opmerking'; b.replaceWith(t); t.focus(); }
+  else if(a==='note'){ const id=b.dataset.id; openNotes.add(id); rerenderField(s,id); document.querySelector(`[data-field="${id}"] textarea.note`)?.focus(); }
+  else if(a==='pickcompliance'){ const id=b.dataset.id, v=b.dataset.v; s.compliance[id] = s.compliance[id]===v?undefined:v; if(s.compliance[id]===undefined) delete s.compliance[id]; touch(s);
+    b.closest('.fn-comp').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', String(x.dataset.v===s.compliance[id]))); }
+  else if(a==='togglesec'||a==='toggleacc'){ const body=b.nextElementSibling; const wasHidden=body.hidden; body.hidden=!wasHidden; b.setAttribute('aria-expanded',String(wasHidden)); }
+  else if(a==='jumpsec'){ const id=b.dataset.id; const head=document.querySelector(`#sec-${id} .cat-head`); const body=head?.nextElementSibling;
+    if(body?.hidden){ body.hidden=false; head.setAttribute('aria-expanded','true'); }
+    document.querySelector(`#sec-${id}`)?.scrollIntoView({behavior:'smooth',block:'start'}); }
+  else if(a==='pickta'){ const key=b.dataset.id, v=b.dataset.v; const inp=document.querySelector(`[data-k="${key}"]`); if(inp) inp.value=v; s.f[key]=v; touch(s);
+    b.closest('.ta-list').hidden=true; }
   else if(a==='delphoto'){ s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); b.closest('.photo').remove(); }
   else if(a==='addgroup'){ S.groups.push({id:uid(),name:'',to:'',cc:''}); persist(); render(); }
   else if(a==='delgroup'){ S.groups=S.groups.filter(g=>g.id!==b.dataset.gid); persist(); render(); }
@@ -563,8 +636,13 @@ document.addEventListener('input', e=>{
   const el=e.target, s=cur(), d=el.dataset;
   if(d.k){ const was=s? doneCount(s):0; s.f[d.k]=el.value; touch(s);
     const fld=FIELD[d.k]; if(fld?.type==='slider'){ const sv=document.querySelector(`[data-sliderval="${d.k}"]`); if(sv) sv.textContent=sliderText(fld,Number(el.value)); }
+    if(d.ta){ const q=el.value.trim().toLowerCase(); const box=el.nextElementSibling;
+      const matches=q?AIRLINES.filter(a=>a.toLowerCase().includes(q)).slice(0,8):[];
+      box.innerHTML=matches.map(m=>`<button type="button" data-a="pickta" data-id="${d.k}" data-v="${esc(m)}">${esc(m)}</button>`).join('');
+      box.hidden=!matches.length; }
     if(doneCount(s)!==was) refreshStats(); }
   else if(d.note){ s.notes[d.note]=el.value; touch(s); }
+  else if(d.score){ s.scores[d.score]=Number(el.value); touch(s); const b=document.querySelector(`[data-scoreval="${d.score}"]`); if(b) b.textContent=el.value; }
   else if(d.top){
     if(d.top==='extra'){ s.recip.extra=el.value; }
     else { let v=el.value; if(d.top==='city'){ v=v.toUpperCase(); if(el.value!==v) el.value=v; } s[d.top]=v; if(d.top==='hotel') $('#bar h1').textContent=title(s); }
@@ -612,7 +690,7 @@ function subject(s){ return `Hotel survey ${title(s)}${s.city?' ('+s.city+')':''
 function mailBody(s){
   const fl=flags(s);
   const lines=[`Hotel survey: ${title(s)}${s.city?' ('+s.city+')':''}`,
-    `Date: ${dateNL(s.date)}${s.inspector?' | Surveyed by: '+s.inspector:''}${s.reps?' | Hodaco/NI reps: '+s.reps:''}`,
+    `Date: ${dateNL(s.date)}${s.inspector?' | Surveyed by: '+s.inspector:''}${s.reps?' | Hodaco Rep: '+s.reps:''}`,
     `CAO compliant: ${caoText(s)}`, '',
     fl.length?`Findings (${fl.length}):`:'Findings: none', ...fl.map(f=>`- ${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`)];
   if(nonEmpty(s.f.otherInfo)) lines.push('','Other information:',s.f.otherInfo);
@@ -645,12 +723,14 @@ function makePdf(s){
   y=44; doc.setFillColor(...vc); doc.roundedRect(M,y,CW,16,2,2,'F');
   setF(12,'bold',[255,255,255]); doc.text(`CAO compliant: ${caoText(s)}`,M+5,y+10);
   doc.text(`${fl.length} finding${fl.length===1?'':'s'}`,W-M-5,y+10,{align:'right'});
-  y=68;
+  y=64;
+  const avg=avgScore(s);
+  if(avg!=null){ setF(11,'bold',INK); doc.text(`Average score: ${avg.toFixed(1)} / 10`,M,y); y+=10; } else y+=4;
   const row=(label,val,{bold=false,red=false}={})=>{
     const L=wrap(label,LW,9.5), V=wrap(val||'-',VW,9.5); const h=Math.max(L.length,V.length)*4.6+2.4;
     ensure(h); setF(9.5,bold?'bold':'normal',MUTED); doc.text(L,M,y+4);
     setF(9.5,red?'bold':'normal',red?RED:(val?INK:MUTED)); doc.text(V,VX,y+4); y+=h; };
-  row('Hotel name',s.hotel); row('City code',s.city); row('Hodaco/NI reps',s.reps);
+  row('Hotel name',s.hotel); row('City code',s.city); row('Hodaco Rep',s.reps);
   // Findings summary
   if(fl.length){ y+=4; ensure(12); setF(12,'bold'); doc.text('Findings',M,y+4); y+=8;
     fl.forEach(f=>{ const L=wrap(`${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`,CW-6,9.5); ensure(L.length*4.6+2);
@@ -658,7 +738,9 @@ function makePdf(s){
   // Sections
   SECTIONS.forEach(sec=>{
     y+=5; ensure(16); doc.setDrawColor(213,221,230); doc.line(M,y,W-M,y); y+=7;
-    setF(12,'bold'); doc.text(sec.name,M,y); y+=4;
+    setF(12,'bold'); doc.text(sec.name,M,y);
+    const cv=sectionCompliance(s,sec); const cc=cv==='Non-compliant'?RED:cv==='Compliant'?GREEN:MUTED;
+    setF(9.5,'bold',cc); doc.text(cv,W-M,y,{align:'right'}); y+=4;
     sec.fields.forEach(f=>{
       if(f.id==='otherInfo') return;
       row(f.label, valueText(s,f), {red:isFlag(s,f)});
@@ -694,7 +776,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.0.5';
+const APP_VERSION='1.1.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
