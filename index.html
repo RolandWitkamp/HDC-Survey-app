@@ -58,9 +58,11 @@ main{max-width:760px;margin:0 auto;padding:16px 16px 120px}
 .hint{color:var(--muted);font-size:.9rem;margin:0}
 label.f{display:block;margin-top:12px;font-size:.9rem;color:var(--muted)}
 label.f input,label.f textarea,label.f select,.inp{display:block;width:100%;margin-top:4px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font-size:1rem;color:var(--ink)}
-label.f input[type="date"],label.f input[type="time"]{height:46px;padding-top:0;padding-bottom:0}
+label.f input[type="date"]{height:46px;padding-top:0;padding-bottom:0;min-width:0}
 textarea{resize:vertical;min-height:72px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.grid2>*{min-width:0}
+.grid2 input,.grid2 select{max-width:100%}
 
 /* Home list */
 .swipe-row{position:relative;overflow:hidden;border-radius:14px;margin-bottom:10px}
@@ -275,7 +277,8 @@ const SECTIONS = [
 const ALL = SECTIONS.flatMap(s=>s.fields.map(f=>({...f,sec:s.id})));
 const FIELD = Object.fromEntries(ALL.map(f=>[f.id,f]));
 const TOTAL = ALL.length;
-function seedMealDefaults(f){ const out={}; f.meals.forEach((_,mi)=>f.days.forEach((_,di)=>{ out[`${f.id}.${mi}.${di}.from`]='06:00'; out[`${f.id}.${mi}.${di}.to`]='11:00'; })); return out; }
+function seedMealDefaults(f){ const out={}; f.meals.forEach((_,mi)=>f.days.forEach((_,di)=>{ out[`${f.id}.${mi}.${di}.from`]='06:00'; out[`${f.id}.${mi}.${di}.to`]='10:30'; })); return out; }
+const TIME_SLOTS = Array.from({length:48},(_,i)=>`${String(Math.floor(i/2)).padStart(2,'0')}:${i%2?'30':'00'}`);
 
 /* ---------- Storage (IndexedDB, falls back to memory) ---------- */
 const store = {
@@ -446,10 +449,12 @@ function fieldHTML(s,f){
       return `<div class="acc">
         <button type="button" class="acc-head" data-a="toggleacc" aria-expanded="false"><span>${esc(meal)}</span><span class="chev">▾</span></button>
         <div class="acc-body" hidden>
-          ${f.days.map((day,di)=>`<div class="grid2" style="margin-top:${di===0?'0':'8px'}">
-            <label class="f" style="margin-top:0">${esc(day)} from<input type="time" step="1800" data-k="${mk}.${di}.from" value="${esc(s.f[`${mk}.${di}.from`])}"></label>
-            <label class="f" style="margin-top:0">to<input type="time" step="1800" data-k="${mk}.${di}.to" value="${esc(s.f[`${mk}.${di}.to`])}"></label>
-          </div>`).join('')}
+          ${f.days.map((day,di)=>{ const kf=`${mk}.${di}.from`, kt=`${mk}.${di}.to`;
+            const opts=(sel)=>`<option value="" ${!s.f[sel]?'selected':''}>–</option>`+TIME_SLOTS.map(t=>`<option value="${t}" ${s.f[sel]===t?'selected':''}>${t}</option>`).join('');
+            return `<div class="grid2" style="margin-top:${di===0?'0':'8px'}">
+            <label class="f" style="margin-top:0">${esc(day)} from<select class="inp" data-k="${kf}">${opts(kf)}</select></label>
+            <label class="f" style="margin-top:0">to<select class="inp" data-k="${kt}">${opts(kt)}</select></label>
+          </div>`; }).join('')}
         </div>
       </div>`; }).join('');
   }
@@ -864,7 +869,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.5.0';
+const APP_VERSION='1.5.1';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
