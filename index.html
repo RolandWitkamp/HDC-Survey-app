@@ -58,11 +58,12 @@ main{max-width:760px;margin:0 auto;padding:16px 16px 120px}
 .hint{color:var(--muted);font-size:.9rem;margin:0}
 label.f{display:block;margin-top:12px;font-size:.9rem;color:var(--muted)}
 label.f input,label.f textarea,label.f select,.inp{display:block;width:100%;margin-top:4px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font-size:1rem;color:var(--ink)}
-label.f input[type="date"]{height:46px;padding-top:0;padding-bottom:0;min-width:0}
 textarea{resize:vertical;min-height:72px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
 .grid2>*{min-width:0}
 .grid2 input,.grid2 select{max-width:100%}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:0 8px;margin-top:4px}
+.grid3>*{min-width:0}
 
 /* Home list */
 .swipe-row{position:relative;overflow:hidden;border-radius:14px;margin-bottom:10px}
@@ -237,7 +238,9 @@ const SECTIONS = [
     {id:'extinguisher', label:'Extinguisher/hose', type:'choice', options:YN, flag:['No']},
     {id:'cctv', label:'CCTV', type:'choice', options:YN, flag:['No']},
     {id:'elevatorKeycard', label:'Elevator keycard guarded', type:'choice', options:YN, flag:['No']},
-    {id:'fireRules', label:'Fire safety and security rules and regulations', type:'choice', options:CMP, flag:['Not compliant']}]},
+    {id:'fireRules', label:'Fire safety and security rules and regulations', type:'choice', options:CMP, flag:['Not compliant']},
+    {id:'airQuality', label:'Air Quality Protocol', type:'choice', options:YN},
+    {id:'sustainability', label:'Sustainability program', type:'choice', options:YN}]},
   {id:'roomSafety', name:'Room safety', fields:[
     {id:'sprinklersRoom', label:'Sprinklers/smoke detectors', type:'choice', options:YN, flag:['No']},
     {id:'peephole', label:'Peep hole', type:'choice', options:YN, flag:['No']},
@@ -303,6 +306,15 @@ const esc = s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':
 const uid = ()=>Math.random().toString(36).slice(2,10);
 const today = ()=>new Date().toISOString().slice(0,10);
 const dateNL = d=>{ if(!d) return ''; const [y,m,dd]=d.split('-'); return `${dd}-${m}-${y}`; };
+function dateSelectHTML(s){
+  const [y,m,d]=(s.date||today()).split('-');
+  const curY=new Date().getFullYear();
+  const opt=(v,cur)=>`<option value="${v}" ${v===cur?'selected':''}>${v}</option>`;
+  const days=Array.from({length:31},(_,i)=>opt(String(i+1).padStart(2,'0'),d)).join('');
+  const months=Array.from({length:12},(_,i)=>opt(String(i+1).padStart(2,'0'),m)).join('');
+  const years=Array.from({length:4},(_,i)=>opt(String(curY-2+i),y)).join('');
+  return `<select class="inp" data-datepart="d" aria-label="Dag">${days}</select><select class="inp" data-datepart="m" aria-label="Maand">${months}</select><select class="inp" data-datepart="y" aria-label="Jaar">${years}</select>`;
+}
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),3800); }
 const cur = ()=>{ const s=S.surveys.find(x=>x.id===view.id); if(s){ s.scores=s.scores||{}; s.compliance=s.compliance||{}; } return s; };
 const title = s=>s.hotel||'Naamloos hotel';
@@ -393,10 +405,9 @@ function renderEdit(){
       <h2>Hotel</h2>
       <label class="f">Hotel name<input data-top="hotel" value="${esc(s.hotel)}" autocomplete="off"></label>
       <div class="logo-row" data-logo-row>${logoBoxHTML(s)}</div>
-      <div class="grid2">
-        <label class="f">City code<input data-top="city" value="${esc(s.city)}" autocapitalize="characters" maxlength="3" placeholder="bijv. NBO"></label>
-        <label class="f">Datum<input type="date" data-top="date" value="${esc(s.date)}"></label>
-      </div>
+      <label class="f">City code<input data-top="city" value="${esc(s.city)}" autocapitalize="characters" maxlength="3" placeholder="bijv. NBO"></label>
+      <label class="f">Datum</label>
+      <div class="grid3">${dateSelectHTML(s)}</div>
       <label class="f">Hodaco Rep<input data-top="reps" value="${esc(s.reps)}"></label>
       <label class="f">NI Rep<input data-top="inspector" value="${esc(s.inspector)}"></label>
     </section>
@@ -728,6 +739,7 @@ document.addEventListener('input', e=>{
     if(doneCount(s)!==was) refreshStats(); }
   else if(d.note){ s.notes[d.note]=el.value; touch(s); }
   else if(d.score){ s.scores[d.score]=Number(el.value); touch(s); const b=document.querySelector(`[data-scoreval="${d.score}"]`); if(b) b.textContent=el.value; }
+  else if(d.datepart){ const [y,m,dd]=(s.date||today()).split('-'); const parts={y,m,d:dd}; parts[d.datepart]=el.value; s.date=`${parts.y}-${parts.m}-${parts.d}`; touch(s); }
   else if(d.top){
     if(d.top==='extra'){ s.recip.extra=el.value; }
     else { let v=el.value; if(d.top==='city'){ v=v.toUpperCase(); if(el.value!==v) el.value=v; } s[d.top]=v;
@@ -869,7 +881,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.5.1';
+const APP_VERSION='1.6.1';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
