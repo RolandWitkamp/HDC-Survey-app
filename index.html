@@ -403,7 +403,9 @@ function renderEdit(){
     </section>
     <section class="panel" id="sec-hotel">
       <h2>Hotel</h2>
-      <label class="f">Hotel name<input data-top="hotel" value="${esc(s.hotel)}" autocomplete="off"></label>
+      <div class="ta-wrap"><label class="f">Hotel name<input data-top="hotel" value="${esc(s.hotel)}" autocomplete="off"></label>
+        <div class="ta-list" data-hotel-suggest hidden></div>
+      </div>
       <div class="logo-row" data-logo-row>${logoBoxHTML(s)}</div>
       <label class="f">Adres<input data-top="address" value="${esc(s.address)}" placeholder="Straat, plaats, land" autocomplete="off"></label>
       <label class="f">City code<input data-top="city" value="${esc(s.city)}" autocapitalize="characters" maxlength="3" placeholder="bijv. NBO"></label>
@@ -428,7 +430,6 @@ function renderEdit(){
   setDock(`<button class="btn primary" data-a="report">Rapport en delen</button>`);
   if(s.hotel?.trim()&&!s.logoData) scheduleLogoLookup(s);
   if(!s.f.driveTime) scheduleDriveTimeLookup(s);
-  if(!s.address?.trim()) scheduleAddressLookup(s);
 }
 function chipsHTML(s){ return SECTIONS.map(sec=>{ const n=sec.fields.filter(f=>isFlag(s,f)).length;
   return `<button type="button" data-a="jumpsec" data-id="${sec.id}" class="${n?'has-flag':''}">${sec.name}<b>${n?'! '+n:doneCount(s,sec.fields)+'/'+sec.fields.length}</b></button>`; }).join(''); }
@@ -622,31 +623,31 @@ function scheduleDriveTimeLookup(s){
   if(addr.length<5 || code.length!==3) return;
   driveTimer=setTimeout(()=>tryFetchDriveTime(s),800);
 }
-let addressTimer=null;
-function scheduleAddressLookup(s){
-  clearTimeout(addressTimer);
-  if(!S.autoAddress || s.address?.trim()) return;
-  const q=(s.hotel||'').trim(); if(q.length<3) return;
-  addressTimer=setTimeout(()=>tryFetchAddress(s),900);
+let hotelSuggestTimer=null, hotelSuggestCache=[];
+function scheduleHotelSuggest(s){
+  clearTimeout(hotelSuggestTimer);
+  const box=document.querySelector('[data-hotel-suggest]');
+  const q=(s.hotel||'').trim();
+  if(!S.autoAddress || q.length<3){ if(box){box.hidden=true; box.innerHTML='';} return; }
+  hotelSuggestTimer=setTimeout(()=>fetchHotelSuggestions(s,q),450);
 }
-async function tryFetchAddress(s){
-  if(!S.autoAddress || s.address?.trim() || !navigator.onLine) return;
-  const q=(s.hotel||'').trim(); if(q.length<3) return;
+async function fetchHotelSuggestions(s,q){
+  if(!navigator.onLine) return;
+  const box=document.querySelector('[data-hotel-suggest]'); if(!box) return;
   try{
     let searchQ=q;
     const code=(s.city||'').trim();
     if(code.length===3){ const airports=await loadAirportsData(); const airport=findAirportByIata(airports,code); if(airport?.city) searchQ=`${q}, ${airport.city}`; }
-    const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(searchQ)}`);
+    const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&namedetails=1&q=${encodeURIComponent(searchQ)}`);
     if(!res.ok) throw 0;
     const list=await res.json();
-    if(!list.length) return;
-    if(s.hotel.trim()!==q || s.address?.trim()) return;
-    s.address=list[0].display_name||'';
-    s.hotelLat=parseFloat(list[0].lat); s.hotelLon=parseFloat(list[0].lon);
-    touch(s);
-    if(view.name==='edit'&&view.id===s.id){ const addrInput=document.querySelector('[data-top="address"]'); if(addrInput) addrInput.value=s.address; }
-    scheduleDriveTimeLookup(s);
-  }catch(e){ /* stil negeren: geen match of geen internet */ }
+    if((s.hotel||'').trim()!==q) return;
+    hotelSuggestCache=list;
+    if(!list.length){ box.hidden=true; box.innerHTML=''; return; }
+    box.innerHTML=list.map((hit,i)=>{ const name=hit.namedetails?.name||hit.display_name.split(',')[0];
+      return `<button type="button" data-a="pickhotel" data-i="${i}"><b>${esc(name)}</b><br><span class="hint">${esc(hit.display_name)}</span></button>`; }).join('');
+    box.hidden=false;
+  }catch(e){ box.hidden=true; }
 }
 let gmapsLoading=null;
 function loadGoogleMaps(){
@@ -777,9 +778,9 @@ function renderSettings(){
     <section class="panel"><h2>Hoteladres</h2>
       <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
         <input type="checkbox" data-set="autoAddress" ${S.autoAddress?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
-        <span style="color:var(--ink)">Automatisch hoteladres opzoeken via internet</span>
+        <span style="color:var(--ink)">Hotel-suggesties tonen tijdens typen</span>
       </label>
-      <p class="hint" style="margin-top:8px">Zoekt bij het intypen van de hotelnaam (en de city code, indien al ingevuld) het adres op via OpenStreetMap. Werkt alleen zolang het adresveld nog leeg is en er internet is; typ je zelf een adres, dan wordt dat niet overschreven.</p>
+      <p class="hint" style="margin-top:8px">Toont bij het intypen van de hotelnaam (via OpenStreetMap) een lijst met mogelijke hotels om uit te kiezen; kies je er één, dan vult het adres automatisch in. Werkt alleen met internetverbinding.</p>
     </section>
     <section class="panel"><h2>Rijtijd naar luchthaven</h2>
       <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
@@ -895,6 +896,14 @@ document.addEventListener('click', e=>{
     document.querySelector(`#sec-${id}`)?.scrollIntoView({behavior:'smooth',block:'start'}); }
   else if(a==='pickta'){ const key=b.dataset.id, v=b.dataset.v; const inp=document.querySelector(`[data-k="${key}"]`); if(inp) inp.value=v; s.f[key]=v; touch(s);
     b.closest('.ta-list').hidden=true; }
+  else if(a==='pickhotel'){ const hit=hotelSuggestCache[Number(b.dataset.i)]; if(!hit) return;
+    const name=hit.namedetails?.name||hit.display_name.split(',')[0];
+    s.hotel=name; s.address=hit.display_name||''; s.hotelLat=parseFloat(hit.lat); s.hotelLon=parseFloat(hit.lon); touch(s);
+    $('#bar h1').textContent=title(s);
+    const hInput=document.querySelector('[data-top="hotel"]'); if(hInput) hInput.value=name;
+    const aInput=document.querySelector('[data-top="address"]'); if(aInput) aInput.value=s.address;
+    b.closest('.ta-list').hidden=true;
+    scheduleLogoLookup(s); scheduleDriveTimeLookup(s); }
   else if(a==='delphoto'){ s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); b.closest('.photo').remove(); }
   else if(a==='clearlogo'){ s.logoData=null; s.logoW=null; s.logoH=null; touch(s); renderLogoBox(s); }
   else if(a==='addgroup'){ S.groups.push({id:uid(),name:'',to:'',cc:''}); persist(); render(); }
@@ -920,9 +929,9 @@ document.addEventListener('input', e=>{
   else if(d.top){
     if(d.top==='extra'){ s.recip.extra=el.value; }
     else { let v=el.value; if(d.top==='city'){ v=v.toUpperCase(); if(el.value!==v) el.value=v; } s[d.top]=v;
-      if(d.top==='hotel'){ $('#bar h1').textContent=title(s); s.logoData=null; s.logoW=null; s.logoH=null; scheduleLogoLookup(s); scheduleAddressLookup(s); }
+      if(d.top==='hotel'){ $('#bar h1').textContent=title(s); s.logoData=null; s.logoW=null; s.logoH=null; scheduleLogoLookup(s); scheduleHotelSuggest(s); }
       if(d.top==='address'){ s.hotelLat=null; s.hotelLon=null; scheduleDriveTimeLookup(s); }
-      if(d.top==='city'){ scheduleAddressLookup(s); scheduleDriveTimeLookup(s); } }
+      if(d.top==='city'){ scheduleDriveTimeLookup(s); if(!(s.address||'').trim()) scheduleHotelSuggest(s); } }
     touch(s);
   }
   else if(d.set==='defRep'){ S.defaultRep=el.value; persist(); }
@@ -1071,7 +1080,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.10.0';
+const APP_VERSION='1.11.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
