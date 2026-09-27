@@ -294,11 +294,11 @@ const store = {
   set(k,v){ this.mem[k]=v; if(!this.db) return Promise.resolve(); return new Promise(res=>{ try{
     const t=this.db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k); t.oncomplete=()=>res(); t.onerror=()=>{toast('Opslaan mislukt: opslag van dit apparaat is vol of geblokkeerd.');res()}; }catch(e){res()} }); }
 };
-let S = { surveys:[], groups:[], defaultRep:'', autoLogo:true, autoDriveTime:true, autoAddress:true };
+let S = { surveys:[], groups:[], defaultRep:'', autoLogo:true, autoDriveTime:true, autoAddress:true, googleMapsKey:'' };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
 let saveTimer=null;
-function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoLogo',S.autoLogo); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); },300); }
+function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoLogo',S.autoLogo); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); },300); }
 
 /* ---------- Helpers ---------- */
 const $ = s=>document.querySelector(s);
@@ -513,7 +513,9 @@ function fieldHTML(s,f){
     let msg;
     if(!S.autoDriveTime) msg='Automatisch schatten staat uit (zie Instellingen).';
     else if(s.driveTimeAuto===false) msg=`Handmatig aangepast. <button type="button" class="link" data-a="drivetimeauto">Automatisch laten berekenen</button>`;
-    else msg='Wordt automatisch geschat op basis van het adres en de city code (via OpenStreetMap), zodra er internet is.';
+    else if(s.f.driveTime && s.driveTimeSource==='google') msg='Automatisch berekend via Google Maps, inclusief actueel verkeer.';
+    else if(s.f.driveTime) msg='Automatisch geschat via OpenStreetMap (geen actueel verkeer). Vul een Google Maps API-sleutel in bij Instellingen voor een schatting mét verkeer.';
+    else msg=S.googleMapsKey ? 'Wordt automatisch berekend via Google Maps zodra adres en city code zijn ingevuld.' : 'Wordt automatisch geschat zodra adres en city code zijn ingevuld.';
     body+=`<p class="hint" style="margin-top:8px">${msg}</p>`;
   }
   const note=s.notes[k], sc=s.scores[k], comp=s.compliance[k];
@@ -646,6 +648,37 @@ async function tryFetchAddress(s){
     scheduleDriveTimeLookup(s);
   }catch(e){ /* stil negeren: geen match of geen internet */ }
 }
+let gmapsLoading=null;
+function loadGoogleMaps(){
+  if(window.google?.maps?.DirectionsService) return Promise.resolve(true);
+  if(!S.googleMapsKey) return Promise.resolve(false);
+  if(gmapsLoading) return gmapsLoading;
+  gmapsLoading=new Promise(resolve=>{
+    try{
+      const script=document.createElement('script');
+      script.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(S.googleMapsKey)}&loading=async`;
+      script.async=true;
+      script.onload=()=>resolve(!!window.google?.maps?.DirectionsService);
+      script.onerror=()=>resolve(false);
+      document.head.appendChild(script);
+    }catch(e){ resolve(false); }
+  });
+  return gmapsLoading;
+}
+function googleDrivingSeconds(from,to){
+  return new Promise(resolve=>{
+    try{
+      new google.maps.DirectionsService().route({
+        origin:{lat:from.lat,lng:from.lon}, destination:{lat:to.lat,lng:to.lon},
+        travelMode:google.maps.TravelMode.DRIVING,
+        drivingOptions:{departureTime:new Date(),trafficModel:'bestguess'}
+      }, (result,status)=>{
+        const leg=status==='OK'?result?.routes?.[0]?.legs?.[0]:null;
+        resolve(leg?(leg.duration_in_traffic||leg.duration).value:null);
+      });
+    }catch(e){ resolve(null); }
+  });
+}
 async function tryFetchDriveTime(s){
   if(!S.autoDriveTime || s.driveTimeAuto===false || !navigator.onLine) return;
   const addr=(s.address||'').trim(), code=(s.city||'').trim();
@@ -656,13 +689,21 @@ async function tryFetchDriveTime(s){
     if(!airport||airport.lat==null||airport.lon==null) return;
     const hotelLoc=(s.hotelLat!=null && s.hotelLon!=null) ? {lat:s.hotelLat, lon:s.hotelLon} : await geocode(addr);
     if(!hotelLoc) return;
-    const res=await fetch(`https://router.project-osrm.org/route/v1/driving/${hotelLoc.lon},${hotelLoc.lat};${airport.lon},${airport.lat}?overview=false`);
-    if(!res.ok) throw 0;
-    const data=await res.json();
-    const dur=data?.routes?.[0]?.duration;
+    let dur=null, viaGoogle=false;
+    if(S.googleMapsKey && await loadGoogleMaps()){
+      dur=await googleDrivingSeconds(hotelLoc,{lat:airport.lat,lon:airport.lon});
+      if(dur!=null) viaGoogle=true;
+    }
+    if(dur==null){
+      const res=await fetch(`https://router.project-osrm.org/route/v1/driving/${hotelLoc.lon},${hotelLoc.lat};${airport.lon},${airport.lat}?overview=false`);
+      if(!res.ok) throw 0;
+      const data=await res.json();
+      dur=data?.routes?.[0]?.duration;
+    }
     if(dur==null) return;
     if((s.address||'').trim()!==addr || (s.city||'').trim()!==code) return;
     s.f.driveTime=formatDuration(dur);
+    s.driveTimeSource=viaGoogle?'google':'osrm';
     touch(s);
     if(view.name==='edit'&&view.id===s.id) rerenderField(s,'driveTime');
   }catch(e){ /* stil negeren: geen internet, geen match, of de route-dienst antwoordt niet */ }
@@ -745,7 +786,18 @@ function renderSettings(){
         <input type="checkbox" data-set="autoDriveTime" ${S.autoDriveTime?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
         <span style="color:var(--ink)">Automatisch rijtijd naar de luchthaven schatten via internet</span>
       </label>
-      <p class="hint" style="margin-top:8px">Gebruikt het adres en de city code om via OpenStreetMap een schatting te maken. Dit is een gratis publieke dienst zonder garanties — kan af en toe leeg blijven, traag zijn of net niet kloppen. Je kunt de uitkomst altijd zelf overschrijven.</p>
+      <p class="hint" style="margin-top:8px">Gebruikt het adres en de city code om via OpenStreetMap een schatting te maken (geen actueel verkeer). Dit is een gratis publieke dienst zonder garanties — kan af en toe leeg blijven, traag zijn of net niet kloppen. Je kunt de uitkomst altijd zelf overschrijven.</p>
+      <label class="f">Google Maps API-sleutel (optioneel)<input type="password" data-set="googleMapsKey" value="${esc(S.googleMapsKey)}" autocomplete="off" placeholder="Plak hier je sleutel"></label>
+      <p class="hint" style="margin-top:8px">Vul je hier een sleutel in, dan wordt de rijtijd voortaan via Google Maps berekend mét actueel verkeer/files, in plaats van de basisschatting hierboven. Zelf een sleutel maken:</p>
+      <ol class="hint" style="margin:6px 0 0;padding-left:18px">
+        <li>Ga naar console.cloud.google.com en maak een project aan (of gebruik een bestaand project).</li>
+        <li>Koppel een facturatieaccount (Billing) — verplicht, maar je gratis maandelijkse tegoed dekt dit gebruik ruimschoots.</li>
+        <li>Ga naar "APIs & Services &gt; Library" en schakel zowel "Maps JavaScript API" als "Directions API" in.</li>
+        <li>Ga naar "APIs & Services &gt; Credentials &gt; Create Credentials &gt; API key".</li>
+        <li>Open de nieuwe sleutel: zet bij "Application restrictions" &gt; "Websites" het adres <code>rolandwitkamp.github.io/*</code>, en bij "API restrictions" alleen de twee APIs hierboven aan.</li>
+        <li>Kopieer de sleutel en plak 'm hier.</li>
+      </ol>
+      <p class="hint" style="margin-top:8px">Na het opslaan of wijzigen van de sleutel moet je de app eenmalig volledig afsluiten en heropenen.</p>
     </section>
     <section class="panel"><h2>Vaste ontvangers</h2>
       <p class="hint">Maak groepen, bijvoorbeeld per station of afdeling. Meerdere adressen scheid je met een komma.</p>
@@ -874,6 +926,7 @@ document.addEventListener('input', e=>{
     touch(s);
   }
   else if(d.set==='defRep'){ S.defaultRep=el.value; persist(); }
+  else if(d.set==='googleMapsKey'){ S.googleMapsKey=el.value.trim(); persist(); }
   else if(d.set){ const g=S.groups.find(x=>x.id===d.gid); g[{gname:'name',gto:'to',gcc:'cc'}[d.set]]=el.value; persist(); }
 });
 document.addEventListener('change', async e=>{
@@ -1018,7 +1071,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.9.0';
+const APP_VERSION='1.10.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
@@ -1045,6 +1098,7 @@ async function exportAll(){
   const savedAutoLogo=await store.get('autoLogo'); S.autoLogo = savedAutoLogo===undefined ? true : savedAutoLogo;
   const savedAutoDrive=await store.get('autoDriveTime'); S.autoDriveTime = savedAutoDrive===undefined ? true : savedAutoDrive;
   const savedAutoAddress=await store.get('autoAddress'); S.autoAddress = savedAutoAddress===undefined ? true : savedAutoAddress;
+  S.googleMapsKey=(await store.get('googleMapsKey'))||'';
   render();
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){
