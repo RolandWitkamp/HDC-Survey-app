@@ -294,11 +294,11 @@ const store = {
   set(k,v){ this.mem[k]=v; if(!this.db) return Promise.resolve(); return new Promise(res=>{ try{
     const t=this.db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k); t.oncomplete=()=>res(); t.onerror=()=>{toast('Opslaan mislukt: opslag van dit apparaat is vol of geblokkeerd.');res()}; }catch(e){res()} }); }
 };
-let S = { surveys:[], groups:[], defaultRep:'', autoLogo:true, autoDriveTime:true };
+let S = { surveys:[], groups:[], defaultRep:'', autoLogo:true, autoDriveTime:true, autoAddress:true };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
 let saveTimer=null;
-function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoLogo',S.autoLogo); store.set('autoDriveTime',S.autoDriveTime); },300); }
+function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoLogo',S.autoLogo); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); },300); }
 
 /* ---------- Helpers ---------- */
 const $ = s=>document.querySelector(s);
@@ -428,6 +428,7 @@ function renderEdit(){
   setDock(`<button class="btn primary" data-a="report">Rapport en delen</button>`);
   if(s.hotel?.trim()&&!s.logoData) scheduleLogoLookup(s);
   if(!s.f.driveTime) scheduleDriveTimeLookup(s);
+  if(!s.address?.trim()) scheduleAddressLookup(s);
 }
 function chipsHTML(s){ return SECTIONS.map(sec=>{ const n=sec.fields.filter(f=>isFlag(s,f)).length;
   return `<button type="button" data-a="jumpsec" data-id="${sec.id}" class="${n?'has-flag':''}">${sec.name}<b>${n?'! '+n:doneCount(s,sec.fields)+'/'+sec.fields.length}</b></button>`; }).join(''); }
@@ -619,6 +620,32 @@ function scheduleDriveTimeLookup(s){
   if(addr.length<5 || code.length!==3) return;
   driveTimer=setTimeout(()=>tryFetchDriveTime(s),800);
 }
+let addressTimer=null;
+function scheduleAddressLookup(s){
+  clearTimeout(addressTimer);
+  if(!S.autoAddress || s.address?.trim()) return;
+  const q=(s.hotel||'').trim(); if(q.length<3) return;
+  addressTimer=setTimeout(()=>tryFetchAddress(s),900);
+}
+async function tryFetchAddress(s){
+  if(!S.autoAddress || s.address?.trim() || !navigator.onLine) return;
+  const q=(s.hotel||'').trim(); if(q.length<3) return;
+  try{
+    let searchQ=q;
+    const code=(s.city||'').trim();
+    if(code.length===3){ const airports=await loadAirportsData(); const airport=findAirportByIata(airports,code); if(airport?.city) searchQ=`${q}, ${airport.city}`; }
+    const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(searchQ)}`);
+    if(!res.ok) throw 0;
+    const list=await res.json();
+    if(!list.length) return;
+    if(s.hotel.trim()!==q || s.address?.trim()) return;
+    s.address=list[0].display_name||'';
+    s.hotelLat=parseFloat(list[0].lat); s.hotelLon=parseFloat(list[0].lon);
+    touch(s);
+    if(view.name==='edit'&&view.id===s.id){ const addrInput=document.querySelector('[data-top="address"]'); if(addrInput) addrInput.value=s.address; }
+    scheduleDriveTimeLookup(s);
+  }catch(e){ /* stil negeren: geen match of geen internet */ }
+}
 async function tryFetchDriveTime(s){
   if(!S.autoDriveTime || s.driveTimeAuto===false || !navigator.onLine) return;
   const addr=(s.address||'').trim(), code=(s.city||'').trim();
@@ -627,7 +654,7 @@ async function tryFetchDriveTime(s){
     const airports=await loadAirportsData();
     const airport=findAirportByIata(airports,code);
     if(!airport||airport.lat==null||airport.lon==null) return;
-    const hotelLoc=await geocode(addr);
+    const hotelLoc=(s.hotelLat!=null && s.hotelLon!=null) ? {lat:s.hotelLat, lon:s.hotelLon} : await geocode(addr);
     if(!hotelLoc) return;
     const res=await fetch(`https://router.project-osrm.org/route/v1/driving/${hotelLoc.lon},${hotelLoc.lat};${airport.lon},${airport.lat}?overview=false`);
     if(!res.ok) throw 0;
@@ -705,6 +732,13 @@ function renderSettings(){
         <span style="color:var(--ink)">Automatisch hotel-logo opzoeken via internet</span>
       </label>
       <p class="hint" style="margin-top:8px">Zoekt bij het intypen van de hotelnaam een logo via een externe dienst (Clearbit). Werkt alleen met internetverbinding en niet bij elk hotel; zet uit als je liever geen hotelnamen extern laat opzoeken.</p>
+    </section>
+    <section class="panel"><h2>Hoteladres</h2>
+      <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
+        <input type="checkbox" data-set="autoAddress" ${S.autoAddress?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
+        <span style="color:var(--ink)">Automatisch hoteladres opzoeken via internet</span>
+      </label>
+      <p class="hint" style="margin-top:8px">Zoekt bij het intypen van de hotelnaam (en de city code, indien al ingevuld) het adres op via OpenStreetMap. Werkt alleen zolang het adresveld nog leeg is en er internet is; typ je zelf een adres, dan wordt dat niet overschreven.</p>
     </section>
     <section class="panel"><h2>Rijtijd naar luchthaven</h2>
       <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
@@ -834,8 +868,9 @@ document.addEventListener('input', e=>{
   else if(d.top){
     if(d.top==='extra'){ s.recip.extra=el.value; }
     else { let v=el.value; if(d.top==='city'){ v=v.toUpperCase(); if(el.value!==v) el.value=v; } s[d.top]=v;
-      if(d.top==='hotel'){ $('#bar h1').textContent=title(s); s.logoData=null; s.logoW=null; s.logoH=null; scheduleLogoLookup(s); }
-      if(d.top==='address'||d.top==='city') scheduleDriveTimeLookup(s); }
+      if(d.top==='hotel'){ $('#bar h1').textContent=title(s); s.logoData=null; s.logoW=null; s.logoH=null; scheduleLogoLookup(s); scheduleAddressLookup(s); }
+      if(d.top==='address'){ s.hotelLat=null; s.hotelLon=null; scheduleDriveTimeLookup(s); }
+      if(d.top==='city'){ scheduleAddressLookup(s); scheduleDriveTimeLookup(s); } }
     touch(s);
   }
   else if(d.set==='defRep'){ S.defaultRep=el.value; persist(); }
@@ -853,6 +888,7 @@ document.addEventListener('change', async e=>{
   }
   if(el.dataset.set==='autoLogo'){ S.autoLogo=el.checked; persist(); }
   if(el.dataset.set==='autoDriveTime'){ S.autoDriveTime=el.checked; persist(); }
+  if(el.dataset.set==='autoAddress'){ S.autoAddress=el.checked; persist(); }
   if(el.dataset.grp){ const id=el.dataset.grp; s.recip.groups = el.checked ? [...new Set([...s.recip.groups,id])] : s.recip.groups.filter(x=>x!==id); touch(s); }
   if(el.dataset.photo && el.files?.length){
     const cat=el.dataset.photo;
@@ -982,7 +1018,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.8.0';
+const APP_VERSION='1.9.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
@@ -1008,6 +1044,7 @@ async function exportAll(){
   S.surveys=(await store.get('surveys-v2'))||[]; S.groups=(await store.get('groups'))||[]; S.defaultRep=(await store.get('defaultRep'))||'';
   const savedAutoLogo=await store.get('autoLogo'); S.autoLogo = savedAutoLogo===undefined ? true : savedAutoLogo;
   const savedAutoDrive=await store.get('autoDriveTime'); S.autoDriveTime = savedAutoDrive===undefined ? true : savedAutoDrive;
+  const savedAutoAddress=await store.get('autoAddress'); S.autoAddress = savedAutoAddress===undefined ? true : savedAutoAddress;
   render();
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){
