@@ -159,8 +159,6 @@ textarea{resize:vertical;min-height:72px}
 .slider-val{font-weight:700;margin-bottom:6px}
 .slider input[type=range]{width:100%;accent-color:var(--accent)}
 .slider-labels{display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem;margin-top:2px}
-.logo-row{margin-top:10px;display:flex;align-items:center;gap:10px;min-height:34px}
-.logo-preview{max-height:40px;max-width:180px;object-fit:contain;border-radius:6px;background:var(--bg);padding:4px}
 .fnote{margin-top:8px}
 .fnote-head{display:flex;justify-content:flex-end}
 .fnote-head .link{font-size:.85rem;padding:2px 0}
@@ -294,11 +292,12 @@ const store = {
   set(k,v){ this.mem[k]=v; if(!this.db) return Promise.resolve(); return new Promise(res=>{ try{
     const t=this.db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k); t.oncomplete=()=>res(); t.onerror=()=>{toast('Opslaan mislukt: opslag van dit apparaat is vol of geblokkeerd.');res()}; }catch(e){res()} }); }
 };
-let S = { surveys:[], groups:[], defaultRep:'', autoLogo:true, autoDriveTime:true, autoAddress:true, googleMapsKey:'' };
+let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'' };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
+let advancedUnlocked = false, versionTaps = 0, versionTapTimer = null;
 let saveTimer=null;
-function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoLogo',S.autoLogo); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); },300); }
+function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); },300); }
 
 /* ---------- Helpers ---------- */
 const $ = s=>document.querySelector(s);
@@ -406,7 +405,6 @@ function renderEdit(){
       <div class="ta-wrap"><label class="f">Hotel name<input data-top="hotel" value="${esc(s.hotel)}" autocomplete="off"></label>
         <div class="ta-list" data-hotel-suggest hidden></div>
       </div>
-      <div class="logo-row" data-logo-row>${logoBoxHTML(s)}</div>
       <label class="f">Adres<input data-top="address" value="${esc(s.address)}" placeholder="Straat, plaats, land" autocomplete="off"></label>
       <label class="f">City code<input data-top="city" value="${esc(s.city)}" autocapitalize="characters" maxlength="3" placeholder="bijv. NBO"></label>
       <label class="f">Datum</label>
@@ -428,7 +426,6 @@ function renderEdit(){
       </div>
     </section>`).join('')}`;
   setDock(`<button class="btn primary" data-a="report">Rapport en delen</button>`);
-  if(s.hotel?.trim()&&!s.logoData) scheduleLogoLookup(s);
   if(!s.f.driveTime) scheduleDriveTimeLookup(s);
 }
 function chipsHTML(s){ return SECTIONS.map(sec=>{ const n=sec.fields.filter(f=>isFlag(s,f)).length;
@@ -543,44 +540,6 @@ function fieldHTML(s,f){
 }
 function photosHTML(s,sec){
   return s.photos.filter(p=>p.cat===sec).map(p=>`<div class="photo"><img src="${p.data}" alt="Foto"><button data-a="delphoto" data-pid="${p.id}" aria-label="Foto verwijderen">×</button></div>`).join('');
-}
-
-/* ---------- Hotel logo (best-effort, online lookup via Clearbit) ---------- */
-function logoBoxHTML(s){
-  if(s.logoData) return `<img class="logo-preview" src="${s.logoData}" alt="Logo ${esc(title(s))}"><button type="button" class="link" data-a="clearlogo">Logo verwijderen</button>`;
-  if(!s.hotel?.trim()) return `<span class="hint" data-logo-status>Typ een hotelnaam om automatisch een logo te zoeken.</span>`;
-  if(!S.autoLogo) return `<span class="hint" data-logo-status>Automatisch logo zoeken staat uit (zie Instellingen).</span>`;
-  return `<span class="hint" data-logo-status>Logo zoeken…</span>`;
-}
-function renderLogoBox(s){
-  if(view.name!=='edit'||view.id!==s.id) return;
-  const row=document.querySelector('[data-logo-row]'); if(row) row.innerHTML=logoBoxHTML(s);
-}
-let logoTimer=null;
-function scheduleLogoLookup(s){
-  clearTimeout(logoTimer);
-  renderLogoBox(s);
-  if(!s.hotel?.trim()||s.logoData||!S.autoLogo) return;
-  logoTimer=setTimeout(()=>tryFetchLogo(s),700);
-}
-async function tryFetchLogo(s){
-  if(!S.autoLogo || s.logoData || !navigator.onLine) return;
-  const q=(s.hotel||'').trim(); if(q.length<3) return;
-  try{
-    const res=await fetch(`https://autocomplete.clearbit.com/v1/companies/suggest?query=${encodeURIComponent(q)}`);
-    if(!res.ok) throw 0;
-    const list=await res.json();
-    const hit=list.find(x=>x.logo);
-    if(!hit) throw 0;
-    const imgRes=await fetch(hit.logo);
-    if(!imgRes.ok) throw 0;
-    const blob=await imgRes.blob();
-    const dataUrl=await new Promise((res2,rej2)=>{ const r=new FileReader(); r.onload=()=>res2(r.result); r.onerror=rej2; r.readAsDataURL(blob); });
-    const dims=await new Promise(res3=>{ const im=new Image(); im.onload=()=>res3({w:im.naturalWidth,h:im.naturalHeight}); im.onerror=()=>res3({w:0,h:0}); im.src=dataUrl; });
-    if(s.hotel.trim()!==q) return; // hotelnaam is intussen alweer veranderd
-    s.logoData=dataUrl; s.logoW=dims.w; s.logoH=dims.h; s.logoFormat=/jpe?g/i.test(blob.type)?'JPEG':'PNG';
-    touch(s); renderLogoBox(s);
-  }catch(e){ if(view.name==='edit'&&view.id===s.id&&!s.logoData){ const row=document.querySelector('[data-logo-row]'); if(row) row.innerHTML=`<span class="hint" data-logo-status>Geen logo gevonden.</span>`; } }
 }
 
 /* ---------- Driving time to airport (best-effort, via OpenStreetMap/OSRM) ---------- */
@@ -771,13 +730,6 @@ function renderSettings(){
   $('#app').innerHTML = `
     <section class="panel"><h2>Jouw naam</h2>
       <label class="f">Standaard Hodaco Rep in nieuwe surveys<input data-set="defRep" value="${esc(S.defaultRep)}"></label></section>
-    <section class="panel"><h2>Hotel-logo</h2>
-      <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
-        <input type="checkbox" data-set="autoLogo" ${S.autoLogo?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
-        <span style="color:var(--ink)">Automatisch hotel-logo opzoeken via internet</span>
-      </label>
-      <p class="hint" style="margin-top:8px">Zoekt bij het intypen van de hotelnaam een logo via een externe dienst (Clearbit). Werkt alleen met internetverbinding en niet bij elk hotel; zet uit als je liever geen hotelnamen extern laat opzoeken.</p>
-    </section>
     <section class="panel"><h2>Hoteladres</h2>
       <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
         <input type="checkbox" data-set="autoAddress" ${S.autoAddress?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
@@ -791,6 +743,7 @@ function renderSettings(){
         <span style="color:var(--ink)">Automatisch rijtijd naar de luchthaven schatten via internet</span>
       </label>
       <p class="hint" style="margin-top:8px">Gebruikt het adres en de city code om via OpenStreetMap een schatting te maken (geen actueel verkeer). Dit is een gratis publieke dienst zonder garanties — kan af en toe leeg blijven, traag zijn of net niet kloppen. Je kunt de uitkomst altijd zelf overschrijven.</p>
+      ${advancedUnlocked?`
       <label class="f">Google Maps API-sleutel (optioneel)<input type="password" data-set="googleMapsKey" value="${esc(S.googleMapsKey)}" autocomplete="off" placeholder="Plak hier je sleutel"></label>
       <p class="hint" style="margin-top:8px">Vul je hier een sleutel in, dan wordt de rijtijd voortaan via Google Maps berekend mét actueel verkeer/files, in plaats van de basisschatting hierboven. Zelf een sleutel maken:</p>
       <ol class="hint" style="margin:6px 0 0;padding-left:18px">
@@ -801,7 +754,7 @@ function renderSettings(){
         <li>Open de nieuwe sleutel: zet bij "Application restrictions" &gt; "Websites" het adres <code>rolandwitkamp.github.io/*</code>, en bij "API restrictions" alleen de twee APIs hierboven aan.</li>
         <li>Kopieer de sleutel en plak 'm hier.</li>
       </ol>
-      <p class="hint" style="margin-top:8px">Na het opslaan of wijzigen van de sleutel moet je de app eenmalig volledig afsluiten en heropenen.</p>
+      <p class="hint" style="margin-top:8px">Na het opslaan of wijzigen van de sleutel moet je de app eenmalig volledig afsluiten en heropenen.</p>`:''}
     </section>
     <section class="panel"><h2>Vaste ontvangers</h2>
       <p class="hint">Maak groepen, bijvoorbeeld per station of afdeling. Meerdere adressen scheid je met een komma.</p>
@@ -815,7 +768,7 @@ function renderSettings(){
       <button class="btn wide" style="margin-top:12px" data-a="export">Alles exporteren (JSON)</button>
       <label class="btn wide" style="margin-top:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">Back-up terugzetten<input type="file" accept="application/json,.json" data-import style="position:absolute;width:1px;height:1px;opacity:0"></label>
       <p class="hint" style="margin-top:10px">Terugzetten voegt surveys toe en overschrijft surveys met hetzelfde ID. Zo kun je ook surveys van een collega inladen.</p></section>
-    <p class="hint" style="text-align:center">Versie ${APP_VERSION}${navigator.onLine?'':' · offline'}</p>`;
+    <button type="button" data-a="versiontap" class="hint" style="display:block;width:100%;text-align:center;border:0;background:none">Versie ${APP_VERSION}${navigator.onLine?'':' · offline'}</button>`;
   setDock('');
 }
 
@@ -874,7 +827,7 @@ document.addEventListener('click', e=>{
   if(a==='home'){view={name:'home'};render();}
   else if(a==='settings'){view={name:'settings'};render();}
   else if(a==='new'){
-    const n={id:uid(),hotel:'',address:'',city:'',reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,photos:[],logoData:null,logoW:null,logoH:null,logoFormat:null,status:'concept',updated:Date.now(),recip:{groups:[],extra:''}};
+    const n={id:uid(),hotel:'',address:'',city:'',reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''}};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
   }
   else if(a==='open'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'edit',id:b.dataset.id}; render(); }
@@ -907,9 +860,8 @@ document.addEventListener('click', e=>{
     const hInput=document.querySelector('[data-top="hotel"]'); if(hInput) hInput.value=name;
     const aInput=document.querySelector('[data-top="address"]'); if(aInput) aInput.value=s.address;
     b.closest('.ta-list').hidden=true;
-    scheduleLogoLookup(s); scheduleDriveTimeLookup(s); }
+    scheduleDriveTimeLookup(s); }
   else if(a==='delphoto'){ s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); b.closest('.photo').remove(); }
-  else if(a==='clearlogo'){ s.logoData=null; s.logoW=null; s.logoH=null; touch(s); renderLogoBox(s); }
   else if(a==='addgroup'){ S.groups.push({id:uid(),name:'',to:'',cc:''}); persist(); render(); }
   else if(a==='delgroup'){ S.groups=S.groups.filter(g=>g.id!==b.dataset.gid); persist(); render(); }
   else if(a==='marksent'){ s.status = s.status==='verzonden'?'concept':'verzonden'; touch(s); render(); toast(s.status==='verzonden'?'Gemarkeerd als verzonden':'Teruggezet naar concept'); }
@@ -917,6 +869,11 @@ document.addEventListener('click', e=>{
   else if(a==='share') sharePdf(s);
   else if(a==='savepdf') savePdf(s);
   else if(a==='export') exportAll();
+  else if(a==='versiontap'){
+    clearTimeout(versionTapTimer); versionTaps++;
+    versionTapTimer=setTimeout(()=>{ versionTaps=0; },1500);
+    if(versionTaps>=7){ versionTaps=0; advancedUnlocked=true; toast('Geavanceerde instellingen ontgrendeld'); render(); }
+  }
 });
 document.addEventListener('input', e=>{
   const el=e.target, s=cur(), d=el.dataset;
@@ -933,7 +890,7 @@ document.addEventListener('input', e=>{
   else if(d.top){
     if(d.top==='extra'){ s.recip.extra=el.value; }
     else { let v=el.value; if(d.top==='city'){ v=v.toUpperCase(); if(el.value!==v) el.value=v; } s[d.top]=v;
-      if(d.top==='hotel'){ $('#bar h1').textContent=title(s); s.logoData=null; s.logoW=null; s.logoH=null; scheduleLogoLookup(s); scheduleHotelSuggest(s); }
+      if(d.top==='hotel'){ $('#bar h1').textContent=title(s); scheduleHotelSuggest(s); }
       if(d.top==='address'){ s.hotelLat=null; s.hotelLon=null; scheduleDriveTimeLookup(s); }
       if(d.top==='city'){ scheduleDriveTimeLookup(s); if(!(s.address||'').trim()) scheduleHotelSuggest(s); } }
     touch(s);
@@ -952,7 +909,6 @@ document.addEventListener('change', async e=>{
     }catch(err){ toast('Dit bestand is geen back-up van Pillow Report.'); }
     el.value=''; return;
   }
-  if(el.dataset.set==='autoLogo'){ S.autoLogo=el.checked; persist(); }
   if(el.dataset.set==='autoDriveTime'){ S.autoDriveTime=el.checked; persist(); }
   if(el.dataset.set==='autoAddress'){ S.autoAddress=el.checked; persist(); }
   if(el.dataset.grp){ const id=el.dataset.grp; s.recip.groups = el.checked ? [...new Set([...s.recip.groups,id])] : s.recip.groups.filter(x=>x!==id); touch(s); }
@@ -1020,11 +976,6 @@ function makePdf(s){
   setF(9,'bold',[170,190,215]); doc.text('HOTEL SURVEY',M,12);
   setF(18,'bold',[255,255,255]); doc.text(wrap(title(s),CW-40,18)[0],M,22);
   setF(9,'normal',[200,212,228]); doc.text([s.city,dateNL(s.date),s.inspector?'Surveyed by '+s.inspector:''].filter(Boolean).join('   |   '),M,30);
-  if(s.logoData){ try{
-    const maxW=34, maxH=20; let lw=maxW, lh=(s.logoW&&s.logoH)?lw*s.logoH/s.logoW:maxH;
-    if(lh>maxH){ lh=maxH; lw=(s.logoW&&s.logoH)?lh*s.logoW/s.logoH:maxW; }
-    doc.addImage(s.logoData, s.logoFormat||'PNG', W-M-lw, (36-lh)/2, lw, lh);
-  }catch(e){} }
   // Verdict
   const fl=flags(s); const vc = s.f.cao==='No'?RED : fl.length?AMBER : s.f.cao==='Yes'?GREEN : MUTED;
   y=44; doc.setFillColor(...vc); doc.roundedRect(M,y,CW,16,2,2,'F');
@@ -1084,7 +1035,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.11.1';
+const APP_VERSION='1.12.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
@@ -1108,7 +1059,6 @@ async function exportAll(){
 (async()=>{
   await store.open();
   S.surveys=(await store.get('surveys-v2'))||[]; S.groups=(await store.get('groups'))||[]; S.defaultRep=(await store.get('defaultRep'))||'';
-  const savedAutoLogo=await store.get('autoLogo'); S.autoLogo = savedAutoLogo===undefined ? true : savedAutoLogo;
   const savedAutoDrive=await store.get('autoDriveTime'); S.autoDriveTime = savedAutoDrive===undefined ? true : savedAutoDrive;
   const savedAutoAddress=await store.get('autoAddress'); S.autoAddress = savedAutoAddress===undefined ? true : savedAutoAddress;
   S.googleMapsKey=(await store.get('googleMapsKey'))||'';
