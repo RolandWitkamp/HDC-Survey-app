@@ -58,6 +58,7 @@ main{max-width:760px;margin:0 auto;padding:16px 16px 120px}
 .hint{color:var(--muted);font-size:.9rem;margin:0}
 label.f{display:block;margin-top:12px;font-size:.9rem;color:var(--muted)}
 label.f input,label.f textarea,label.f select,.inp{display:block;width:100%;margin-top:4px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg);font-size:1rem;color:var(--ink)}
+label.f input[type="date"],label.f input[type="time"]{height:46px;padding-top:0;padding-bottom:0}
 textarea{resize:vertical;min-height:72px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
 
@@ -82,7 +83,8 @@ textarea{resize:vertical;min-height:72px}
 .progress i{display:block;height:100%;background:var(--accent);transition:width .2s}
 
 /* Category */
-.cat-head{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;border:0;background:none;padding:0;text-align:left}
+.cat-head{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:0;text-align:left}
+.cat-head h2{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chev{color:var(--muted);flex:none;transition:transform .15s}
 .cat-head[aria-expanded="true"] .chev,.acc-head[aria-expanded="true"] .chev{transform:rotate(180deg)}
 .sec-body{padding-top:10px}
@@ -174,7 +176,7 @@ textarea{resize:vertical;min-height:72px}
 .chips button{flex:none;border:0;color:var(--ink);background:var(--soft);border-radius:99px;padding:6px 12px;font-size:.85rem;white-space:nowrap}
 .chips button b{font-variant-numeric:tabular-nums;color:var(--muted);font-weight:400;margin-left:4px}
 .chips button.has-flag b{color:var(--s1);font-weight:700}
-.sec-meta{font-size:.9rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.sec-meta{font-size:.9rem;color:var(--muted);font-variant-numeric:tabular-nums;flex:none;min-width:64px;text-align:right}
 .sec-meta .fl{color:var(--s1);font-weight:700}
 .stamp[data-s="ok"]{background:var(--s5)}.stamp[data-s="warn"]{background:var(--s2)}.stamp[data-s="bad"]{background:var(--s1)}
 </style>
@@ -215,12 +217,12 @@ const SECTIONS = [
     {id:'trayCharge', label:'Room service tray charge', type:'choice', options:YN},
     {id:'restaurants', label:'Restaurants', type:'restaurants', rows:3, meals:['Lunch','Dinner','All-day']},
     {id:'bar', label:'Bar', type:'text'},
-    {id:'pool', label:'Pool', type:'choice', options:['Indoor','Outdoor','Both']},
-    {id:'gym', label:'Gym', type:'choice', options:CMP, flag:['Not compliant']},
-    {id:'otherFacilities', label:'Other facilities', type:'multi', options:['Spa','Sauna/steambath','Other'], other:'Other'},
+    {id:'pool', label:'Pool', type:'choice', options:YN, detail:{when:'Yes', type:'choice', options:['Indoor','Outdoor','Both']}},
+    {id:'gym', label:'Gym', type:'choice', options:YN},
+    {id:'otherFacilities', label:'Other facilities', type:'choice', options:YN, detail:{when:'Yes', type:'multi', options:['Spa','Sauna/steambath','Other'], other:'Other'}},
     {id:'shuttle', label:'Shuttle', type:'choice', options:YN}]},
   {id:'location', name:'Location', fields:[
-    {id:'hotelArea', label:'Hotel area', type:'text'},
+    {id:'hotelArea', label:'Hotel area', type:'select', options:['Airport','Residential','Commercial/Business district','Suburban','Beach/Resort','Historic/Old town','Industrial/Business park','Rural','Other'], other:'Other'},
     {id:'cityCenter', label:'City center', type:'choice', options:YN},
     {id:'driveTime', label:'Driving time to the airport', type:'text', ph:'bijv. 35 min'},
     {id:'entertainment', label:'Distance to entertainment', type:'text'},
@@ -273,6 +275,7 @@ const SECTIONS = [
 const ALL = SECTIONS.flatMap(s=>s.fields.map(f=>({...f,sec:s.id})));
 const FIELD = Object.fromEntries(ALL.map(f=>[f.id,f]));
 const TOTAL = ALL.length;
+function seedMealDefaults(f){ const out={}; f.meals.forEach((_,mi)=>f.days.forEach((_,di)=>{ out[`${f.id}.${mi}.${di}.from`]='06:00'; out[`${f.id}.${mi}.${di}.to`]='11:00'; })); return out; }
 
 /* ---------- Storage (IndexedDB, falls back to memory) ---------- */
 const store = {
@@ -337,7 +340,12 @@ function valueText(s,f){
     return parts?`${meal}: ${parts}`:''; }).filter(Boolean).join('\n');
   let t = Array.isArray(v)? v.join(', ') : (v||'');
   if(f.other && (Array.isArray(v)?v.includes(f.other):v===f.other) && nonEmpty(s.f[f.id+'.other'])) t+=`: ${s.f[f.id+'.other']}`;
-  if(f.detail && v===f.detail.when && nonEmpty(s.f[f.id+'.detail'])) t+=` (${s.f[f.id+'.detail']})`;
+  if(f.detail && v===f.detail.when && nonEmpty(s.f[f.id+'.detail'])){
+    const dv=s.f[f.id+'.detail'];
+    let dt=Array.isArray(dv)?dv.join(', '):dv;
+    if(f.detail.other && Array.isArray(dv) && dv.includes(f.detail.other) && nonEmpty(s.f[f.id+'.detail.other'])) dt+=`: ${s.f[f.id+'.detail.other']}`;
+    t+=` (${dt})`;
+  }
   if(f.extra && nonEmpty(s.f[f.id+'.extra'])) t+=`${t?'  |  ':''}${f.extra}: ${s.f[f.id+'.extra']}`;
   return t;
 }
@@ -439,11 +447,17 @@ function fieldHTML(s,f){
         <button type="button" class="acc-head" data-a="toggleacc" aria-expanded="false"><span>${esc(meal)}</span><span class="chev">▾</span></button>
         <div class="acc-body" hidden>
           ${f.days.map((day,di)=>`<div class="grid2" style="margin-top:${di===0?'0':'8px'}">
-            <label class="f" style="margin-top:0">${esc(day)} van<input type="time" data-k="${mk}.${di}.from" value="${esc(s.f[`${mk}.${di}.from`])}"></label>
-            <label class="f" style="margin-top:0">tot<input type="time" data-k="${mk}.${di}.to" value="${esc(s.f[`${mk}.${di}.to`])}"></label>
+            <label class="f" style="margin-top:0">${esc(day)} from<input type="time" step="1800" data-k="${mk}.${di}.from" value="${esc(s.f[`${mk}.${di}.from`])}"></label>
+            <label class="f" style="margin-top:0">to<input type="time" step="1800" data-k="${mk}.${di}.to" value="${esc(s.f[`${mk}.${di}.to`])}"></label>
           </div>`).join('')}
         </div>
       </div>`; }).join('');
+  }
+  else if(f.type==='select'){
+    body = `<select class="inp" data-k="${k}" aria-label="${esc(f.label)}">
+      <option value="" ${!v?'selected':''}>Kies…</option>
+      ${f.options.map(o=>`<option value="${esc(o)}" ${v===o?'selected':''}>${esc(o)}</option>`).join('')}
+    </select>`;
   }
   else body=optButtons(s,f,f.type==='multi');
   const showOther = f.other && (Array.isArray(v)?v.includes(f.other):v===f.other);
@@ -458,6 +472,12 @@ function fieldHTML(s,f){
     } else if(f.detail.type==='search'){
       body+=`<div class="ta-wrap sub"><input class="inp" data-k="${k}.detail" data-ta="1" value="${esc(s.f[k+'.detail'])}" placeholder="Zoek of typ een airline" autocomplete="off">
         <div class="ta-list" hidden></div></div>`;
+    } else if(f.detail.type==='multi'){
+      const dv=s.f[k+'.detail']||[];
+      body+=`<div class="opts multi sub" role="group" aria-label="${esc(f.detail.label||f.label)}">${f.detail.options.map(o=>{
+        const on=dv.includes(o);
+        return `<button data-a="toggledetail" data-id="${k}" data-v="${esc(o)}" aria-pressed="${on}">${esc(o)}</button>`; }).join('')}</div>`;
+      if(f.detail.other && dv.includes(f.detail.other)) body+=`<input class="inp sub" data-k="${k}.detail.other" value="${esc(s.f[k+'.detail.other'])}" placeholder="Specificeer">`;
     } else body+=`<input class="inp sub" data-k="${k}.detail" value="${esc(s.f[k+'.detail'])}" placeholder="${f.detail.label}, bijv. 06:00-23:00">`;
   }
   if(f.extra) body+=`<label class="f">${f.extra}<input data-k="${k}.extra" value="${esc(s.f[k+'.extra'])}"></label>`;
@@ -547,7 +567,7 @@ function renderReport(){
   $('#app').innerHTML = `
     <section class="panel">
       <div class="summary"><span class="stamp big" data-s="${v.k}">${v.t}</span>
-      <div class="txt"><b>${esc(title(s))}</b><p class="hint">${esc([s.city,dateNL(s.date),s.inspector].filter(Boolean).join(', '))}</p>
+      <div class="txt"><b>${esc(title(s))}</b><p class="hint">${esc([s.city,dateNL(s.date),s.reps,s.inspector].filter(Boolean).join(', '))}</p>
       <p class="hint">${v.w} · ${doneCount(s)} van ${TOTAL} punten ingevuld${avg!=null?` · Gem. score ${avg.toFixed(1)}/10`:''}</p></div></div>
       <div class="bars">${SECTIONS.map(sec=>{const d=doneCount(s,sec.fields),n=sec.fields.filter(f=>isFlag(s,f)).length,cv=sectionCompliance(s,sec);
         return `<div class="barrow"><span>${sec.name}</span><span class="track"><i style="width:${d/sec.fields.length*100}%;background:${n?'var(--s2)':'var(--accent)'}"></i></span><b style="color:${cv==='Non-compliant'?'var(--s1)':cv==='Compliant'?'var(--s5)':'var(--muted)'}">${cv==='Not assessed'?d+'/'+sec.fields.length:cv}</b></div>`}).join('')}</div>
@@ -659,7 +679,7 @@ document.addEventListener('click', e=>{
   if(a==='home'){view={name:'home'};render();}
   else if(a==='settings'){view={name:'settings'};render();}
   else if(a==='new'){
-    const n={id:uid(),hotel:'',city:'',reps:S.defaultRep,date:today(),inspector:'',f:{},notes:{},scores:{},compliance:{},photos:[],logoData:null,logoW:null,logoH:null,logoFormat:null,status:'concept',updated:Date.now(),recip:{groups:[],extra:''}};
+    const n={id:uid(),hotel:'',city:'',reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},photos:[],logoData:null,logoW:null,logoH:null,logoFormat:null,status:'concept',updated:Date.now(),recip:{groups:[],extra:''}};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
   }
   else if(a==='open'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'edit',id:b.dataset.id}; render(); }
@@ -670,6 +690,7 @@ document.addEventListener('click', e=>{
   else if(a==='pick'){ const id=b.dataset.id, v=b.dataset.v; s.f[id] = s.f[id]===v?undefined:v; if(s.f[id]===undefined) delete s.f[id]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='toggle'){ const id=b.dataset.id, v=b.dataset.v; const arr=s.f[id]||[]; s.f[id]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='pickdetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; s.f[dk] = s.f[dk]===v?undefined:v; if(s.f[dk]===undefined) delete s.f[dk]; touch(s); rerenderField(s,id); refreshStats(); }
+  else if(a==='toggledetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; const arr=s.f[dk]||[]; s.f[dk]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='meal'){ const k=`${b.dataset.id}.${b.dataset.i}.meals`, v=b.dataset.v; const arr=s.f[k]||[]; s.f[k]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); b.setAttribute('aria-pressed',s.f[k].includes(v)); }
   else if(a==='note'){ const id=b.dataset.id; noteOverride.set(id,true); rerenderField(s,id); document.querySelector(`[data-field="${id}"] textarea.note`)?.focus(); }
   else if(a==='hidenote'){ noteOverride.set(b.dataset.id,false); rerenderField(s,b.dataset.id); }
@@ -843,7 +864,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.4.0';
+const APP_VERSION='1.5.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
