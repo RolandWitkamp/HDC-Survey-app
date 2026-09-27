@@ -515,9 +515,10 @@ function fieldHTML(s,f){
     if(!S.autoDriveTime) msg='Automatisch schatten staat uit (zie Instellingen).';
     else if(s.driveTimeAuto===false) msg=`Handmatig aangepast. <button type="button" class="link" data-a="drivetimeauto">Automatisch laten berekenen</button>`;
     else if(s.f.driveTime && s.driveTimeSource==='google') msg='Automatisch berekend via Google Maps, inclusief actueel verkeer.';
-    else if(s.f.driveTime) msg='Automatisch geschat via OpenStreetMap (geen actueel verkeer). Vul een Google Maps API-sleutel in bij Instellingen voor een schatting mét verkeer.';
+    else if(s.f.driveTime) msg='Automatisch geschat via OpenStreetMap (geen actueel verkeer).'+(s.driveTimeGoogleError?` Google Maps mislukte: <b>${esc(s.driveTimeGoogleError)}</b>.`:' Vul een Google Maps API-sleutel in bij Instellingen voor een schatting mét verkeer.');
     else msg=S.googleMapsKey ? 'Wordt automatisch berekend via Google Maps zodra adres en city code zijn ingevuld.' : 'Wordt automatisch geschat zodra adres en city code zijn ingevuld.';
-    body+=`<p class="hint" style="margin-top:8px">${msg}</p>`;
+    const canRetry=(s.address||'').trim().length>=5 && (s.city||'').trim().length===3;
+    body+=`<p class="hint" style="margin-top:8px">${msg}${canRetry?` <button type="button" class="link" data-a="retrydrivetime">Nu opnieuw proberen</button>`:''}</p>`;
   }
   const note=s.notes[k], sc=s.scores[k], comp=s.compliance[k];
   const auto = !!note || flagged || sc!=null || !!comp;
@@ -675,9 +676,9 @@ function googleDrivingSeconds(from,to){
         drivingOptions:{departureTime:new Date(),trafficModel:'bestguess'}
       }, (result,status)=>{
         const leg=status==='OK'?result?.routes?.[0]?.legs?.[0]:null;
-        resolve(leg?(leg.duration_in_traffic||leg.duration).value:null);
+        resolve({seconds:leg?(leg.duration_in_traffic||leg.duration).value:null, status});
       });
-    }catch(e){ resolve(null); }
+    }catch(e){ resolve({seconds:null, status:'EXCEPTION: '+e}); }
   });
 }
 async function tryFetchDriveTime(s){
@@ -690,10 +691,12 @@ async function tryFetchDriveTime(s){
     if(!airport||airport.lat==null||airport.lon==null) return;
     const hotelLoc=(s.hotelLat!=null && s.hotelLon!=null) ? {lat:s.hotelLat, lon:s.hotelLon} : await geocode(addr);
     if(!hotelLoc) return;
-    let dur=null, viaGoogle=false;
-    if(S.googleMapsKey && await loadGoogleMaps()){
-      dur=await googleDrivingSeconds(hotelLoc,{lat:airport.lat,lon:airport.lon});
-      if(dur!=null) viaGoogle=true;
+    let dur=null, viaGoogle=false; s.driveTimeGoogleError=null;
+    if(S.googleMapsKey){
+      if(await loadGoogleMaps()){
+        const g=await googleDrivingSeconds(hotelLoc,{lat:airport.lat,lon:airport.lon});
+        if(g.seconds!=null){ dur=g.seconds; viaGoogle=true; } else { s.driveTimeGoogleError=g.status||'onbekende fout'; }
+      } else s.driveTimeGoogleError='kon de Google Maps-bibliotheek niet laden (controleer de sleutel)';
     }
     if(dur==null){
       const res=await fetch(`https://router.project-osrm.org/route/v1/driving/${hotelLoc.lon},${hotelLoc.lat};${airport.lon},${airport.lat}?overview=false`);
@@ -882,6 +885,7 @@ document.addEventListener('click', e=>{
   else if(a==='pick'){ const id=b.dataset.id, v=b.dataset.v; if(id==='cao') s.caoAuto=false; s.f[id] = s.f[id]===v?undefined:v; if(s.f[id]===undefined) delete s.f[id]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='caoauto'){ s.caoAuto=true; touch(s); rerenderField(s,'cao'); refreshStats(); }
   else if(a==='drivetimeauto'){ s.driveTimeAuto=true; rerenderField(s,'driveTime'); scheduleDriveTimeLookup(s); }
+  else if(a==='retrydrivetime'){ s.driveTimeAuto=true; s.driveTimeGoogleError=null; touch(s); rerenderField(s,'driveTime'); tryFetchDriveTime(s); }
   else if(a==='toggle'){ const id=b.dataset.id, v=b.dataset.v; const arr=s.f[id]||[]; s.f[id]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='pickdetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; s.f[dk] = s.f[dk]===v?undefined:v; if(s.f[dk]===undefined) delete s.f[dk]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='toggledetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; const arr=s.f[dk]||[]; s.f[dk]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
@@ -1080,7 +1084,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.11.0';
+const APP_VERSION='1.11.1';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
