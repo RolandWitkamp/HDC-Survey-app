@@ -43,6 +43,8 @@ img{max-width:100%;display:block}
 .bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:10;background:var(--bg);border-bottom:1px solid var(--line)}
 .bar-in{max-width:760px;margin:0 auto;display:flex;align-items:center;gap:12px;padding:12px 16px;min-height:60px}
 .bar h1{font-size:1.15rem;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.brand svg{flex:none}
 .icon-btn{border:0;background:none;padding:8px;margin:-8px;border-radius:8px;font-size:1.3rem;line-height:1;display:inline-flex;align-items:center;justify-content:center;color:inherit}
 main{max-width:760px;margin:0 auto;padding:16px 16px 120px}
 
@@ -197,7 +199,8 @@ textarea{resize:vertical;min-height:72px}
 const YN=['Yes','No'], CMP=['Compliant','Not compliant'];
 const ICON={
   trash:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
-  settings:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82A1.65 1.65 0 0 0 3 13.09H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+  settings:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82A1.65 1.65 0 0 0 3 13.09H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  mark:'<svg width="34" height="24" viewBox="0 0 212 152" aria-hidden="true"><rect x="0" y="0" width="212" height="152" rx="40" fill="#0EA5E9"/><rect x="14" y="14" width="184" height="124" rx="28" fill="none" stroke="#fff" stroke-width="6" stroke-dasharray="10 9"/><rect x="66" y="26" width="80" height="100" rx="22" fill="#fff"/><path d="M83 76 L101 94 L131 56" fill="none" stroke="#0EA5E9" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/></svg>'
 };
 const AIRLINES=['Aegean Airlines','Aer Lingus','Aeroflot','Aeromexico','Air Algerie','Air Astana','Air Baltic','Air Canada','Air China','Air Europa','Air France','Air India','Air New Zealand','Air Serbia','Air Transat','Alaska Airlines','Alitalia (ITA Airways)','All Nippon Airways (ANA)','American Airlines','Asiana Airlines','Austrian Airlines','Avianca','Azerbaijan Airlines','Bangkok Airways','Batik Air','British Airways','Brussels Airlines','Bulgaria Air','Cathay Pacific','Cebu Pacific','China Airlines','China Eastern Airlines','China Southern Airlines','Condor','Copa Airlines','Croatia Airlines','Delta Air Lines','EgyptAir','EL AL','Emirates','Ethiopian Airlines','Etihad Airways','Eurowings','EVA Air','Finnair','flydubai','Garuda Indonesia','Gulf Air','Hainan Airlines','Hawaiian Airlines','Hong Kong Airlines','Iberia','Icelandair','IndiGo','Japan Airlines (JAL)','Jet2','JetBlue','Jetstar Airways','Juneyao Airlines','Kenya Airways','KLM Royal Dutch Airlines','Korean Air','Kuwait Airways','LATAM Airlines','LOT Polish Airlines','Lufthansa','Luxair','Malaysia Airlines','Malta Air','Middle East Airlines','Norwegian Air','Oman Air','Pakistan International Airlines','Pegasus Airlines','Philippine Airlines','Qantas','Qatar Airways','Royal Air Maroc','Royal Brunei Airlines','Royal Jordanian','RwandAir','Ryanair','SAS Scandinavian Airlines','Saudia','Scoot','Shenzhen Airlines','Singapore Airlines','South African Airways','Southwest Airlines','SpiceJet','Spirit Airlines','SriLankan Airlines','Sun Country Airlines','Swiss International Air Lines','TAAG Angola Airlines','TAP Air Portugal','Thai Airways','Transavia','Tunisair','Turkish Airlines','Ukraine International Airlines','United Airlines','Uzbekistan Airways','Vietnam Airlines','Virgin Atlantic','Virgin Australia','Vistara','Vueling','WestJet','Wizz Air','Xiamen Airlines'];
 const SECTIONS = [
@@ -372,7 +375,7 @@ function render(){ window.scrollTo(0,0);
   ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings})[view.name](); }
 
 function renderHome(){
-  setBar(`<h1>Pillow Report</h1><button class="icon-btn" data-a="settings" aria-label="Instellingen">${ICON.settings}</button>`);
+  setBar(`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span><button class="icon-btn" data-a="settings" aria-label="Instellingen">${ICON.settings}</button>`);
   const list=[...S.surveys].sort((a,b)=>(b.updated||0)-(a.updated||0));
   $('#app').innerHTML = list.length ? list.map(s=>{ const v=verdict(s); return `
     <div class="swipe-row">
@@ -1092,7 +1095,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.14.0';
+const APP_VERSION='1.14.1';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
