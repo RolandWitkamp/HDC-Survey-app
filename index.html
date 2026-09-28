@@ -18,7 +18,7 @@
 @font-face{font-family:"Atkinson Hyperlegible";font-weight:700;font-style:normal;font-display:swap;src:url(fonts/atkinson-hyperlegible-latin-700-normal.woff2) format("woff2")}
 :root{
   --bg:#EDF1F5; --surface:#FFFFFF; --ink:#13233A; --muted:#5B6B80; --line:#D5DDE6;
-  --accent:#1D5FA8; --accent-ink:#FFFFFF; --soft:#E3EBF4;
+  --accent:#0EA5E9; --accent-ink:#0B2340; --soft:#E3EBF4;
   --s0:#9AA7B6; --s1:#C2413B; --s2:#D9822B; --s3:#B8961C; --s4:#4E9A5B; --s5:#1F7A5C;
   box-sizing:border-box;
   padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
@@ -26,11 +26,11 @@
 }
 @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
   --bg:#0E1621; --surface:#172231; --ink:#E6EDF5; --muted:#9AAABD; --line:#2A3A4E;
-  --accent:#5B9BE6; --accent-ink:#0E1621; --soft:#1E2E42;
+  --accent:#38BDF8; --accent-ink:#0B2340; --soft:#1E2E42;
 }}
 :root[data-theme="dark"]{
   --bg:#0E1621; --surface:#172231; --ink:#E6EDF5; --muted:#9AAABD; --line:#2A3A4E;
-  --accent:#5B9BE6; --accent-ink:#0E1621; --soft:#1E2E42;
+  --accent:#38BDF8; --accent-ink:#0B2340; --soft:#1E2E42;
 }
 *,*::before,*::after{box-sizing:border-box}
 html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 64px)}
@@ -1092,7 +1092,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.13.0';
+const APP_VERSION='1.14.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }

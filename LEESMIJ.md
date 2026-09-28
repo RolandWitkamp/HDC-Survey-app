@@ -1,4 +1,4 @@
-# Hotel survey: installeren en delen
+# Pillow Report: installeren en delen
 
 ## 1. Online zetten (GitHub Pages, gratis)
 1. Maak een account op github.com en klik op **New repository**. Geef het een naam, bijvoorbeeld `hotel-survey`, en kies **Public** (gratis Pages vereist dat; alleen de code is zichtbaar, nooit de surveys).
@@ -18,6 +18,7 @@ Gebruik altijd het icoon op het beginscherm. Gegevens van gewone Safari-tabblade
 ## 3. Delen met collega's
 Stuur ze de link en deze instructie. Ieder apparaat heeft zijn eigen surveys.
 Surveys overdragen: **Instellingen > Alles exporteren**, stuur het bestand door, en de ontvanger kiest **Back-up terugzetten**.
+Tussen je eigen toestellen (bijv. iPhone naar iPad) gaat dit het snelst via **AirDrop**: bij "Alles exporteren" verschijnt AirDrop gewoon in het deelvenster als de toestellen dichtbij zijn. Zo kun je een survey op de ene tablet/telefoon verder afmaken op de andere.
 
 ## 4. Updates uitbrengen
 1. Pas de bestanden aan en upload ze opnieuw naar dezelfde repository.

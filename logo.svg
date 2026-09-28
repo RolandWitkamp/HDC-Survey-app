@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 300">
+  <defs>
+    <clipPath id="badgeInnerL"><rect x="60" y="90" width="170" height="122" rx="32"/></clipPath>
+  </defs>
+  <rect x="20" y="50" width="280" height="200" rx="56" fill="#13233A"/>
+  <rect x="60" y="90" width="170" height="122" rx="32" fill="#0EA5E9"/>
+  <g clip-path="url(#badgeInnerL)">
+    <rect x="70" y="100" width="150" height="102" rx="22" fill="none" stroke="#FFFFFF" stroke-width="4" stroke-dasharray="7 6"/>
+  </g>
+  <rect x="105" y="110" width="66" height="82" rx="18" fill="#FFFFFF"/>
+  <path d="M 118 152 L 132 166 L 156 136" fill="none" stroke="#0EA5E9" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="335" y="180" font-family="Georgia, 'Times New Roman', serif" font-size="86" font-weight="700" fill="#13233A">Pillow Report</text>
+</svg>
