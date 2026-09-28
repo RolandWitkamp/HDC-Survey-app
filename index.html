@@ -238,6 +238,7 @@ const SECTIONS = [
     {id:'elevatorKeycard', label:'Elevator keycard guarded', type:'choice', options:YN, flag:['No']},
     {id:'fireRules', label:'Fire safety and security rules and regulations', type:'choice', options:CMP, flag:['Not compliant']},
     {id:'airQuality', label:'Air Quality Protocol', type:'choice', options:YN},
+    {id:'airQualityIndex', label:'Air Quality Index (measured)', type:'text', ph:'Wordt automatisch opgehaald'},
     {id:'sustainability', label:'Sustainability program', type:'choice', options:YN}]},
   {id:'roomSafety', name:'Room safety', fields:[
     {id:'sprinklersRoom', label:'Sprinklers/smoke detectors', type:'choice', options:YN, flag:['No']},
@@ -292,12 +293,12 @@ const store = {
   set(k,v){ this.mem[k]=v; if(!this.db) return Promise.resolve(); return new Promise(res=>{ try{
     const t=this.db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k); t.oncomplete=()=>res(); t.onerror=()=>{toast('Opslaan mislukt: opslag van dit apparaat is vol of geblokkeerd.');res()}; }catch(e){res()} }); }
 };
-let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'' };
+let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'' };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
 let advancedUnlocked = false, versionTaps = 0, versionTapTimer = null;
 let saveTimer=null;
-function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); },300); }
+function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); },300); }
 
 /* ---------- Helpers ---------- */
 const $ = s=>document.querySelector(s);
@@ -315,7 +316,7 @@ function dateSelectHTML(s){
   return `<select class="inp" data-datepart="d" aria-label="Dag">${days}</select><select class="inp" data-datepart="m" aria-label="Maand">${months}</select><select class="inp" data-datepart="y" aria-label="Jaar">${years}</select>`;
 }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),3800); }
-const cur = ()=>{ const s=S.surveys.find(x=>x.id===view.id); if(s){ s.scores=s.scores||{}; s.compliance=s.compliance||{}; if(s.caoAuto===undefined) s.caoAuto=true; if(s.driveTimeAuto===undefined) s.driveTimeAuto=true; if(s.address===undefined) s.address=''; } return s; };
+const cur = ()=>{ const s=S.surveys.find(x=>x.id===view.id); if(s){ s.scores=s.scores||{}; s.compliance=s.compliance||{}; if(s.caoAuto===undefined) s.caoAuto=true; if(s.driveTimeAuto===undefined) s.driveTimeAuto=true; if(s.airQualityAuto===undefined) s.airQualityAuto=true; if(s.address===undefined) s.address=''; } return s; };
 const title = s=>s.hotel||'Naamloos hotel';
 const nonEmpty = v=>Array.isArray(v)?v.length>0:(v!=null&&String(v).trim()!=='');
 
@@ -517,6 +518,17 @@ function fieldHTML(s,f){
     const canRetry=(s.address||'').trim().length>=5 && (s.city||'').trim().length===3;
     body+=`<p class="hint" style="margin-top:8px">${msg}${canRetry?` <button type="button" class="link" data-a="retrydrivetime">Nu opnieuw proberen</button>`:''}</p>`;
   }
+  if(f.id==='airQualityIndex'){
+    let msg;
+    const canRetry=(s.address||'').trim().length>=5;
+    if(!S.waqiToken) msg='Vul een gratis WAQI-token in bij Instellingen om dit automatisch op te halen.';
+    else if(!S.autoAirQuality) msg='Automatisch ophalen staat uit (zie Instellingen).';
+    else if(s.airQualityAuto===false) msg=`Handmatig aangepast. <button type="button" class="link" data-a="airqualityauto">Automatisch laten ophalen</button>`;
+    else if(s.f.airQualityIndex) msg='Automatisch opgehaald via WAQI/aqicn.org (gemeten data van het dichtstbijzijnde meetstation).';
+    else if(s.airQualityError) msg=`Geen data gevonden: <b>${esc(String(s.airQualityError))}</b>.`;
+    else msg='Wordt automatisch opgehaald zodra het adres is ingevuld.';
+    body+=`<p class="hint" style="margin-top:8px">${msg}${(canRetry&&S.waqiToken)?` <button type="button" class="link" data-a="retryairquality">Nu opnieuw proberen</button>`:''}</p>`;
+  }
   const note=s.notes[k], sc=s.scores[k], comp=s.compliance[k];
   const auto = !!note || flagged || sc!=null || !!comp;
   const showNote = noteOverride.has(k) ? noteOverride.get(k) : auto;
@@ -672,6 +684,38 @@ async function tryFetchDriveTime(s){
   }catch(e){ /* stil negeren: geen internet, geen match, of de route-dienst antwoordt niet */ }
 }
 
+/* ---------- Air quality at destination (best-effort, via WAQI/aqicn.org) ---------- */
+function aqiCategory(aqi){
+  if(aqi<=50) return 'Good'; if(aqi<=100) return 'Moderate';
+  if(aqi<=150) return 'Unhealthy for sensitive groups'; if(aqi<=200) return 'Unhealthy';
+  if(aqi<=300) return 'Very unhealthy'; return 'Hazardous';
+}
+let aqiTimer=null;
+function scheduleAirQualityLookup(s){
+  clearTimeout(aqiTimer);
+  if(!S.autoAirQuality || s.airQualityAuto===false) return;
+  const addr=(s.address||'').trim(); if(addr.length<5) return;
+  aqiTimer=setTimeout(()=>tryFetchAirQuality(s),800);
+}
+async function tryFetchAirQuality(s){
+  if(!S.autoAirQuality || s.airQualityAuto===false || !navigator.onLine || !S.waqiToken) return;
+  const addr=(s.address||'').trim(); if(addr.length<5) return;
+  try{
+    const hotelLoc=(s.hotelLat!=null && s.hotelLon!=null) ? {lat:s.hotelLat, lon:s.hotelLon} : await geocode(addr);
+    if(!hotelLoc) return;
+    const res=await fetch(`https://api.waqi.info/feed/geo:${hotelLoc.lat};${hotelLoc.lon}/?token=${encodeURIComponent(S.waqiToken)}`);
+    if(!res.ok) throw 0;
+    const data=await res.json();
+    if(data.status!=='ok' || data.data?.aqi==null){ s.airQualityError=data.data||data.status; return; }
+    if((s.address||'').trim()!==addr) return;
+    const aqi=data.data.aqi;
+    s.f.airQualityIndex=`AQI ${aqi} (${aqiCategory(aqi)})${data.data.dominentpol?' — '+data.data.dominentpol:''}`;
+    s.airQualityError=null;
+    touch(s);
+    if(view.name==='edit'&&view.id===s.id) rerenderField(s,'airQualityIndex');
+  }catch(e){ /* stil negeren */ }
+}
+
 function rerenderField(s,id){ const row=document.querySelector(`[data-field="${id}"]`); if(!row) return;
   const t=document.createElement('div'); t.innerHTML=fieldHTML(s,FIELD[id]); row.replaceWith(t.firstElementChild); }
 function refreshStats(){
@@ -756,6 +800,15 @@ function renderSettings(){
       </ol>
       <p class="hint" style="margin-top:8px">Na het opslaan of wijzigen van de sleutel moet je de app eenmalig volledig afsluiten en heropenen.</p>`:''}
     </section>
+    <section class="panel"><h2>Luchtkwaliteit bestemming</h2>
+      <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
+        <input type="checkbox" data-set="autoAirQuality" ${S.autoAirQuality?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
+        <span style="color:var(--ink)">Automatisch luchtkwaliteit ophalen via internet</span>
+      </label>
+      <p class="hint" style="margin-top:8px">Haalt bij het invullen van het adres de gemeten luchtkwaliteit (AQI) op via het gratis platform WAQI/aqicn.org.</p>
+      <label class="f">WAQI-token (gratis)<input type="password" data-set="waqiToken" value="${esc(S.waqiToken)}" autocomplete="off" placeholder="Plak hier je token"></label>
+      <p class="hint" style="margin-top:8px">Gratis token aanvragen: ga naar <b>aqicn.org/data-platform/token/</b>, vul je e-mailadres in, en je ontvangt direct een token per mail. Geen creditcard of facturering nodig. Plak de token hierboven.</p>
+    </section>
     <section class="panel"><h2>Vaste ontvangers</h2>
       <p class="hint">Maak groepen, bijvoorbeeld per station of afdeling. Meerdere adressen scheid je met een komma.</p>
       ${S.groups.map(g=>`<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:4px">
@@ -827,7 +880,7 @@ document.addEventListener('click', e=>{
   if(a==='home'){view={name:'home'};render();}
   else if(a==='settings'){view={name:'settings'};render();}
   else if(a==='new'){
-    const n={id:uid(),hotel:'',address:'',city:'',reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''}};
+    const n={id:uid(),hotel:'',address:'',city:'',reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''}};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
   }
   else if(a==='open'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'edit',id:b.dataset.id}; render(); }
@@ -839,6 +892,8 @@ document.addEventListener('click', e=>{
   else if(a==='caoauto'){ s.caoAuto=true; touch(s); rerenderField(s,'cao'); refreshStats(); }
   else if(a==='drivetimeauto'){ s.driveTimeAuto=true; rerenderField(s,'driveTime'); scheduleDriveTimeLookup(s); }
   else if(a==='retrydrivetime'){ s.driveTimeAuto=true; s.driveTimeGoogleError=null; touch(s); rerenderField(s,'driveTime'); tryFetchDriveTime(s); }
+  else if(a==='airqualityauto'){ s.airQualityAuto=true; rerenderField(s,'airQualityIndex'); scheduleAirQualityLookup(s); }
+  else if(a==='retryairquality'){ s.airQualityAuto=true; s.airQualityError=null; touch(s); rerenderField(s,'airQualityIndex'); tryFetchAirQuality(s); }
   else if(a==='toggle'){ const id=b.dataset.id, v=b.dataset.v; const arr=s.f[id]||[]; s.f[id]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='pickdetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; s.f[dk] = s.f[dk]===v?undefined:v; if(s.f[dk]===undefined) delete s.f[dk]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='toggledetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; const arr=s.f[dk]||[]; s.f[dk]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
@@ -860,7 +915,7 @@ document.addEventListener('click', e=>{
     const hInput=document.querySelector('[data-top="hotel"]'); if(hInput) hInput.value=name;
     const aInput=document.querySelector('[data-top="address"]'); if(aInput) aInput.value=s.address;
     b.closest('.ta-list').hidden=true;
-    scheduleDriveTimeLookup(s); }
+    scheduleDriveTimeLookup(s); scheduleAirQualityLookup(s); }
   else if(a==='delphoto'){ s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); b.closest('.photo').remove(); }
   else if(a==='addgroup'){ S.groups.push({id:uid(),name:'',to:'',cc:''}); persist(); render(); }
   else if(a==='delgroup'){ S.groups=S.groups.filter(g=>g.id!==b.dataset.gid); persist(); render(); }
@@ -877,7 +932,7 @@ document.addEventListener('click', e=>{
 });
 document.addEventListener('input', e=>{
   const el=e.target, s=cur(), d=el.dataset;
-  if(d.k){ const was=s? doneCount(s):0; if(d.k==='driveTime') s.driveTimeAuto=false; s.f[d.k]=el.value; touch(s);
+  if(d.k){ const was=s? doneCount(s):0; if(d.k==='driveTime') s.driveTimeAuto=false; if(d.k==='airQualityIndex') s.airQualityAuto=false; s.f[d.k]=el.value; touch(s);
     const fld=FIELD[d.k]; if(fld?.type==='slider'){ const sv=document.querySelector(`[data-sliderval="${d.k}"]`); if(sv) sv.textContent=sliderText(fld,Number(el.value)); }
     if(d.ta){ const q=el.value.trim().toLowerCase(); const box=el.nextElementSibling;
       const matches=q?AIRLINES.filter(a=>a.toLowerCase().includes(q)).slice(0,8):[];
@@ -891,12 +946,13 @@ document.addEventListener('input', e=>{
     if(d.top==='extra'){ s.recip.extra=el.value; }
     else { let v=el.value; if(d.top==='city'){ v=v.toUpperCase(); if(el.value!==v) el.value=v; } s[d.top]=v;
       if(d.top==='hotel'){ $('#bar h1').textContent=title(s); scheduleHotelSuggest(s); }
-      if(d.top==='address'){ s.hotelLat=null; s.hotelLon=null; scheduleDriveTimeLookup(s); }
+      if(d.top==='address'){ s.hotelLat=null; s.hotelLon=null; scheduleDriveTimeLookup(s); scheduleAirQualityLookup(s); }
       if(d.top==='city'){ scheduleDriveTimeLookup(s); if(!(s.address||'').trim()) scheduleHotelSuggest(s); } }
     touch(s);
   }
   else if(d.set==='defRep'){ S.defaultRep=el.value; persist(); }
   else if(d.set==='googleMapsKey'){ S.googleMapsKey=el.value.trim(); persist(); }
+  else if(d.set==='waqiToken'){ S.waqiToken=el.value.trim(); persist(); }
   else if(d.set){ const g=S.groups.find(x=>x.id===d.gid); g[{gname:'name',gto:'to',gcc:'cc'}[d.set]]=el.value; persist(); }
 });
 document.addEventListener('change', async e=>{
@@ -911,6 +967,7 @@ document.addEventListener('change', async e=>{
   }
   if(el.dataset.set==='autoDriveTime'){ S.autoDriveTime=el.checked; persist(); }
   if(el.dataset.set==='autoAddress'){ S.autoAddress=el.checked; persist(); }
+  if(el.dataset.set==='autoAirQuality'){ S.autoAirQuality=el.checked; persist(); }
   if(el.dataset.grp){ const id=el.dataset.grp; s.recip.groups = el.checked ? [...new Set([...s.recip.groups,id])] : s.recip.groups.filter(x=>x!==id); touch(s); }
   if(el.dataset.photo && el.files?.length){
     const cat=el.dataset.photo;
@@ -1035,7 +1092,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.12.0';
+const APP_VERSION='1.13.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
@@ -1062,6 +1119,8 @@ async function exportAll(){
   const savedAutoDrive=await store.get('autoDriveTime'); S.autoDriveTime = savedAutoDrive===undefined ? true : savedAutoDrive;
   const savedAutoAddress=await store.get('autoAddress'); S.autoAddress = savedAutoAddress===undefined ? true : savedAutoAddress;
   S.googleMapsKey=(await store.get('googleMapsKey'))||'';
+  const savedAutoAQ=await store.get('autoAirQuality'); S.autoAirQuality = savedAutoAQ===undefined ? true : savedAutoAQ;
+  S.waqiToken=(await store.get('waqiToken'))||'';
   render();
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){
