@@ -161,6 +161,11 @@ textarea{resize:vertical;min-height:72px}
 .slider-val{font-weight:700;margin-bottom:6px}
 .slider input[type=range]{width:100%;accent-color:var(--accent)}
 .slider-labels{display:flex;justify-content:space-between;color:var(--muted);font-size:.85rem;margin-top:2px}
+.standard{margin-top:8px}
+.standard summary{cursor:pointer;font-weight:700;font-size:.85rem;color:var(--accent);list-style:none;display:inline-flex;align-items:center;gap:4px}
+.standard summary::-webkit-details-marker{display:none}
+.standard summary::before{content:"ℹ️";font-size:.9em}
+.standard p{margin:6px 0 0;padding:10px 12px;background:var(--soft);border-radius:10px;font-size:.85rem;color:var(--ink);line-height:1.5}
 .fnote{margin-top:8px}
 .fnote-head{display:flex;justify-content:flex-end}
 .fnote-head .link{font-size:.85rem;padding:2px 0}
@@ -200,7 +205,8 @@ const YN=['Yes','No'], CMP=['Compliant','Not compliant'];
 const ICON={
   trash:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
   settings:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82A1.65 1.65 0 0 0 3 13.09H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
-  mark:'<svg width="34" height="24" viewBox="0 0 212 152" aria-hidden="true"><rect x="0" y="0" width="212" height="152" rx="40" fill="#0EA5E9"/><rect x="14" y="14" width="184" height="124" rx="28" fill="none" stroke="#fff" stroke-width="6" stroke-dasharray="10 9"/><rect x="66" y="26" width="80" height="100" rx="22" fill="#fff"/><path d="M83 76 L101 94 L131 56" fill="none" stroke="#0EA5E9" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  mark:'<svg width="34" height="24" viewBox="0 0 212 152" aria-hidden="true"><rect x="0" y="0" width="212" height="152" rx="40" fill="#0EA5E9"/><rect x="14" y="14" width="184" height="124" rx="28" fill="none" stroke="#fff" stroke-width="6" stroke-dasharray="10 9"/><rect x="66" y="26" width="80" height="100" rx="22" fill="#fff"/><path d="M83 76 L101 94 L131 56" fill="none" stroke="#0EA5E9" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  book:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>'
 };
 const AIRLINES=['Aegean Airlines','Aer Lingus','Aeroflot','Aeromexico','Air Algerie','Air Astana','Air Baltic','Air Canada','Air China','Air Europa','Air France','Air India','Air New Zealand','Air Serbia','Air Transat','Alaska Airlines','Alitalia (ITA Airways)','All Nippon Airways (ANA)','American Airlines','Asiana Airlines','Austrian Airlines','Avianca','Azerbaijan Airlines','Bangkok Airways','Batik Air','British Airways','Brussels Airlines','Bulgaria Air','Cathay Pacific','Cebu Pacific','China Airlines','China Eastern Airlines','China Southern Airlines','Condor','Copa Airlines','Croatia Airlines','Delta Air Lines','EgyptAir','EL AL','Emirates','Ethiopian Airlines','Etihad Airways','Eurowings','EVA Air','Finnair','flydubai','Garuda Indonesia','Gulf Air','Hainan Airlines','Hawaiian Airlines','Hong Kong Airlines','Iberia','Icelandair','IndiGo','Japan Airlines (JAL)','Jet2','JetBlue','Jetstar Airways','Juneyao Airlines','Kenya Airways','KLM Royal Dutch Airlines','Korean Air','Kuwait Airways','LATAM Airlines','LOT Polish Airlines','Lufthansa','Luxair','Malaysia Airlines','Malta Air','Middle East Airlines','Norwegian Air','Oman Air','Pakistan International Airlines','Pegasus Airlines','Philippine Airlines','Qantas','Qatar Airways','Royal Air Maroc','Royal Brunei Airlines','Royal Jordanian','RwandAir','Ryanair','SAS Scandinavian Airlines','Saudia','Scoot','Shenzhen Airlines','Singapore Airlines','South African Airways','Southwest Airlines','SpiceJet','Spirit Airlines','SriLankan Airlines','Sun Country Airlines','Swiss International Air Lines','TAAG Angola Airlines','TAP Air Portugal','Thai Airways','Transavia','Tunisair','Turkish Airlines','Ukraine International Airlines','United Airlines','Uzbekistan Airways','Vietnam Airlines','Virgin Atlantic','Virgin Australia','Vistara','Vueling','WestJet','Wizz Air','Xiamen Airlines'];
 const SECTIONS = [
@@ -209,56 +215,56 @@ const SECTIONS = [
     {id:'renovation', label:'Last major renovation', type:'text', mode:'numeric'},
     {id:'numRooms', label:'Number of rooms', type:'text', mode:'numeric'},
     {id:'numFloors', label:'Number of floors', type:'text', mode:'numeric'},
-    {id:'connecting', label:'Connecting doors', type:'choice', options:['Yes','No'], detail:{when:'Yes', type:'choice', options:['Able to exclude','Not able to exclude'], flag:['Not able to exclude']}},
+    {id:'connecting', label:'Connecting doors', type:'choice', options:['Yes','No'], detail:{when:'Yes', type:'choice', options:['Able to exclude','Not able to exclude'], flag:['Not able to exclude']}, standard:"Kamers met connecting doors dienen te worden uitgesloten, tenzij partijen onderling anders beslissen. Deuren met een connecting door dienen aan beide zijden een slot te hebben."},
     {id:'guests', label:'Guests', type:'slider', min:0, max:100, step:5, left:'Business', right:'Leisure'},
     {id:'management', label:'Management', type:'text'},
     {id:'airlineExp', label:'Airline experience', type:'choice', options:YN, detail:{when:'Yes', type:'search'}}]},
   {id:'facilities', name:'Facilities', fields:[
-    {id:'mealHours', label:'Meal times', type:'mealtimes', meals:['Breakfast','Lunch','Dinner'], days:['Mo-Fri','Sa-Su']},
-    {id:'breakfastType', label:'Breakfast type', type:'choice', options:['Buffet','A la carte','Other'], other:'Other'},
+    {id:'mealHours', label:'Meal times', type:'mealtimes', meals:['Breakfast','Lunch','Dinner'], days:['Mo-Fri','Sa-Su'], standard:"Artikel 2c: dinertijden — voor crews die met de vroege vlucht vertrekken moet de avond voorafgaand tussen 17.00-19.00 uur LT gedineerd kunnen worden. Ontbijttijden Europa: het hotel regelt een ontbijt voor de vroegst vertrekkende crew. Oostelijk gelegen stations (tijdsverschil ≥5 uur): ontbijt tot 15:00 lokale tijd op rekening van KLM."},
+    {id:'breakfastType', label:'Breakfast type', type:'choice', options:['Buffet','A la carte','Other'], other:'Other', standard:"Artikel 3a — norm ontbijt: vruchtensap, 2 eieren met ham, brood, boter en thee of koffie."},
     {id:'extBreakfast', label:'Extended breakfast', type:'choice', options:YN},
     {id:'roomService', label:'Room service', type:'choice', options:['24 hrs','Limited hours','No room service'], detail:{when:'Limited hours', label:'Hours'}},
     {id:'trayCharge', label:'Room service tray charge', type:'choice', options:YN},
     {id:'restaurants', label:'Restaurants', type:'restaurants', rows:3, meals:['Lunch','Dinner','All-day']},
     {id:'bar', label:'Bar', type:'text'},
-    {id:'pool', label:'Pool', type:'choice', options:YN, detail:{when:'Yes', type:'choice', options:['Indoor','Outdoor','Both']}},
-    {id:'gym', label:'Gym', type:'choice', options:YN},
+    {id:'pool', label:'Pool', type:'choice', options:YN, detail:{when:'Yes', type:'choice', options:['Indoor','Outdoor','Both']}, standard:"Een zwembad wordt gedefinieerd als een bad bedoeld om in te zwemmen; dus geen jacuzzi of bubbelbad. Heeft het hotel alleen een buitenzwembad dat 's winters niet geopend is (of geen zwembad/fitness, ook niet publiek toegankelijk), dan wordt hiervoor pro rato een vergoeding aan het daggeld toegevoegd."},
+    {id:'gym', label:'Gym', type:'choice', options:YN, standard:"Artikel 2e — Sportfaciliteiten dienen in het hotel aanwezig te zijn, van deugdelijke kwaliteit en in voldoende mate. Een fitnessruimte is voldoende uitgerust als er cardiomachines én minstens één fitnessapparaat en/of carrousel met gewichten aanwezig zijn."},
     {id:'otherFacilities', label:'Other facilities', type:'choice', options:YN, detail:{when:'Yes', type:'multi', options:['Spa','Sauna/steambath','Other'], other:'Other'}},
     {id:'shuttle', label:'Shuttle', type:'choice', options:YN}]},
   {id:'location', name:'Location', fields:[
-    {id:'hotelArea', label:'Hotel area', type:'select', options:['Airport','Residential','Commercial/Business district','Suburban','Beach/Resort','Historic/Old town','Industrial/Business park','Rural','Other'], other:'Other'},
-    {id:'cityCenter', label:'City center', type:'choice', options:YN},
-    {id:'driveTime', label:'Driving time to the airport', type:'text', ph:'bijv. 35 min'},
+    {id:'hotelArea', label:'Hotel area', type:'select', options:['Airport','Residential','Commercial/Business district','Suburban','Beach/Resort','Historic/Old town','Industrial/Business park','Rural','Other'], other:'Other', standard:"Artikel 2b — Een redelijke ligging t.o.v. vliegveld, winkels en recreatiemogelijkheden, in voldoende veilige omgeving en rekening houdend met unieke kenmerken van de bestemming. Uitgangspunt is te overnachten in of nabij het centrum van de stad; 'hotels in the middle of nowhere' worden voorkomen, tenzij lokale omstandigheden (bijv. veiligheid, ontbreken van één centraal centrum, onevenredig lange reistijd) een alternatieve locatie rechtvaardigen."},
+    {id:'cityCenter', label:'City center', type:'choice', options:YN, standard:"Artikel 2b: uitgangspunt is dat er wordt geslapen in de stad waar KLM op vliegt, bij voorkeur in of nabij het centrum. Op basis van redelijkheid en argumenten kan hiervan worden afgeweken."},
+    {id:'driveTime', label:'Driving time to the airport', type:'text', ph:'bijv. 35 min', standard:"Onderdeel van de ligging-beoordeling (Artikel 2b): een redelijke ligging t.o.v. het vliegveld, rekening houdend met de lokale omstandigheden."},
     {id:'entertainment', label:'Distance to entertainment', type:'text'},
     {id:'publicTransport', label:'Public transport', type:'multi', options:['Subway','Bus/tram'], extra:'Cost 1-way taxi'}]},
   {id:'security', name:'Safety and security', fields:[
-    {id:'sprinklersPublic', label:'Sprinklers/smoke detectors public areas', type:'choice', options:YN, flag:['No']},
+    {id:'sprinklersPublic', label:'Sprinklers/smoke detectors public areas', type:'choice', options:YN, flag:['No'], standard:"Smokedetectors en/of sprinklers dienen óf op kamerniveau óf in de gang waaraan de kamers grenzen aanwezig te zijn."},
     {id:'emergencyExits', label:'Number of emergency exits per floor', type:'text', mode:'numeric'},
-    {id:'exitsMarked', label:'Exits clearly marked', type:'choice', options:YN, flag:['No']},
-    {id:'exitObstacleFree', label:'Exit route obstacle free', type:'choice', options:YN, flag:['No']},
+    {id:'exitsMarked', label:'Exits clearly marked', type:'choice', options:YN, flag:['No'], standard:"De nooduitgangen en evacuatieroute dienen duidelijk aangegeven te zijn en voorzien te zijn van noodverlichting; de uitgangen en de route dienen vrij van obstakels te zijn."},
+    {id:'exitObstacleFree', label:'Exit route obstacle free', type:'choice', options:YN, flag:['No'], standard:"De nooduitgangen en evacuatieroute dienen duidelijk aangegeven te zijn en voorzien te zijn van noodverlichting; de uitgangen en de route dienen vrij van obstakels te zijn."},
     {id:'extinguisher', label:'Extinguisher/hose', type:'choice', options:YN, flag:['No']},
     {id:'cctv', label:'CCTV', type:'choice', options:YN, flag:['No']},
     {id:'elevatorKeycard', label:'Elevator keycard guarded', type:'choice', options:YN, flag:['No']},
-    {id:'fireRules', label:'Fire safety and security rules and regulations', type:'choice', options:CMP, flag:['Not compliant']},
+    {id:'fireRules', label:'Fire safety and security rules and regulations', type:'choice', options:CMP, flag:['Not compliant'], standard:"De geldende Europese wet- en regelgeving, 86/666/EEC, aangaande brandveiligheid dient aangehouden te worden. Maken lokale omstandigheden dit onmogelijk, dan treedt overleg met de SCO in werking om mitigerende maatregelen te treffen."},
     {id:'airQuality', label:'Air Quality Protocol', type:'choice', options:YN},
     {id:'airQualityIndex', label:'Air Quality Index (measured)', type:'text', ph:'Wordt automatisch opgehaald'},
     {id:'sustainability', label:'Sustainability program', type:'choice', options:YN}]},
   {id:'roomSafety', name:'Room safety', fields:[
-    {id:'sprinklersRoom', label:'Sprinklers/smoke detectors', type:'choice', options:YN, flag:['No']},
-    {id:'peephole', label:'Peep hole', type:'choice', options:YN, flag:['No']},
-    {id:'escapePlan', label:'Escape plan', type:'choice', options:YN, flag:['No']},
+    {id:'sprinklersRoom', label:'Sprinklers/smoke detectors', type:'choice', options:YN, flag:['No'], standard:"Smokedetectors en/of sprinklers dienen óf op kamerniveau óf in de gang waaraan de kamers grenzen aanwezig te zijn."},
+    {id:'peephole', label:'Peep hole', type:'choice', options:YN, flag:['No'], standard:"De deur van een kamer in een hotel dient ofwel een peephole óf een ketting/looplock te hebben."},
+    {id:'escapePlan', label:'Escape plan', type:'choice', options:YN, flag:['No'], standard:"Evacuatieplan dient in kamers op of nabij de kamerdeur te hangen."},
     {id:'extraLock', label:'Extra lock', type:'choice', options:YN, flag:['No']},
     {id:'safe', label:'Safety deposit box', type:'choice', options:YN, flag:['No']}]},
   {id:'rooms', name:'Rooms general', fields:[
-    {id:'roomClass', label:'Room classification', type:'text'},
+    {id:'roomClass', label:'Room classification', type:'text', standard:"Artikel 2d — Een kwaliteitsniveau dat overeenkomt met dat van de bekende internationale hotelketens."},
     {id:'roomNumbers', label:'Room numbers checked', type:'text', ph:'bijv. 1204, 1512'},
-    {id:'roomSize', label:'Room size', type:'text', ph:'m2'},
+    {id:'roomSize', label:'Room size', type:'text', ph:'m2', standard:"Artikel 2a — Een hotelkamer die niet kleiner zal zijn dan ca. 3x4 meter (excl. badkamer, hal en nis)."},
     {id:'bathSize', label:'Bathroom size', type:'text', ph:'m2'},
     {id:'sepShower', label:'Separate shower', type:'choice', options:YN},
     {id:'windowsOpen', label:'Windows open', type:'choice', options:YN},
     {id:'glazing', label:'Window glazing', type:'choice', options:['Single','Double','Triple']},
-    {id:'blackout', label:'Blackout', type:'choice', options:CMP, flag:['Not compliant']},
-    {id:'aircon', label:'Air-conditioning', type:'choice', options:['2-pipe','4-pipe','Different']},
+    {id:'blackout', label:'Blackout', type:'choice', options:CMP, flag:['Not compliant'], standard:"Lichtdichte gordijnen: black-out is toereikend wanneer tijdens daglicht de gordijnen gesloten worden en de tekst op papier niet meer leesbaar is."},
+    {id:'aircon', label:'Air-conditioning', type:'choice', options:['2-pipe','4-pipe','Different'], standard:"Airconditioning en verwarming, indien temperatuur of klimaat daartoe aanleiding geven: crewhotels dienen te beschikken over een regelbaar temperatuursysteem dat kan koelen én verwarmen, ongeacht de periode van het jaar, in lijn met de lokale wet- en regelgeving."},
     {id:'desk', label:'Writing desk', type:'choice', options:YN},
     {id:'fridge', label:'Refrigerator', type:'choice', options:YN},
     {id:'coffeeTea', label:'Coffee/tea facilities', type:'choice', options:YN},
@@ -266,9 +272,9 @@ const SECTIONS = [
     {id:'waterPotable', label:'Water potable', type:'choice', options:YN},
     {id:'compWater', label:'Complimentary water', type:'choice', options:YN}]},
   {id:'noise', name:'Noise', fields:[
-    {id:'nRoomToRoom', label:'Room to room', type:'choice', options:CMP, flag:['Not compliant']},
-    {id:'nHallway', label:'Hallway', type:'choice', options:CMP, flag:['Not compliant']},
-    {id:'nRoomAbove', label:'Room above', type:'choice', options:CMP, flag:['Not compliant']},
+    {id:'nRoomToRoom', label:'Room to room', type:'choice', options:CMP, flag:['Not compliant'], standard:"Voorziening tegen geluidshinder: het geluidsniveau dient getoetst te worden op geluid van 1) de gang, 2) omringende kamers, 3) werkzaamheden en 4) buiten. Kamers met connecting doors worden bij voorkeur uitgesloten; vroege en late crews worden zoveel mogelijk van elkaar gescheiden."},
+    {id:'nHallway', label:'Hallway', type:'choice', options:CMP, flag:['Not compliant'], standard:"Hotels dienen geen kamers uit te geven in de nabijheid van liften, ijsmachines, verkoopautomaten, ontbijt-/dinerzalen of vergader- en entertainmentzalen. Bij voorkeur ook niet nabij linnenkamers en/of schoonmaakruimtes."},
+    {id:'nRoomAbove', label:'Room above', type:'choice', options:CMP, flag:['Not compliant'], standard:"Bij voorkeur worden kamers op de hogere verdieping uitgegeven aan de crew en zoveel mogelijk bij elkaar."},
     {id:'nOutside', label:'Outside', type:'choice', options:CMP, flag:['Not compliant']},
     {id:'nPiping', label:'Piping system', type:'choice', options:CMP, flag:['Not compliant']},
     {id:'nRoomDoor', label:'Room door', type:'choice', options:CMP, flag:['Not compliant']},
@@ -369,10 +375,10 @@ function valueText(s,f){
 }
 
 /* ---------- Views ---------- */
-function setBar(html){ $('#bar').innerHTML=html; }
+function setBar(html){ $('#bar').innerHTML=html+(view.name==='docs'?'':`<button class="icon-btn" data-a="docs" aria-label="Werkafspraken">${ICON.book}</button>`); }
 function setDock(html){ const d=$('#dock'); if(!html){d.hidden=true;return;} d.hidden=false; $('#dockIn').innerHTML=html; }
 function render(){ window.scrollTo(0,0);
-  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings})[view.name](); }
+  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs})[view.name](); }
 
 function renderHome(){
   setBar(`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span><button class="icon-btn" data-a="settings" aria-label="Instellingen">${ICON.settings}</button>`);
@@ -502,6 +508,7 @@ function fieldHTML(s,f){
     } else body+=`<input class="inp sub" data-k="${k}.detail" value="${esc(s.f[k+'.detail'])}" placeholder="${f.detail.label}, bijv. 06:00-23:00">`;
   }
   if(f.extra) body+=`<label class="f">${f.extra}<input data-k="${k}.extra" value="${esc(s.f[k+'.extra'])}"></label>`;
+  if(f.standard) body+=`<details class="standard"><summary>Details</summary><p>${esc(f.standard)}</p></details>`;
   if(f.id==='cao'){
     const nc=nonCompliantFields(s);
     let msg;
@@ -828,6 +835,129 @@ function renderSettings(){
   setDock('');
 }
 
+const DOC_HTML = `
+<section class="panel">
+  <h2>Werkafspraken crewhotels &amp; daggeld</h2>
+  <p class="hint">Gezamenlijke werkafspraken tussen BVD, Hodaco en Procurement Hodaco. Geldig per 23 januari 2025, voor onbepaalde tijd. Ondertekend te Schiphol door M. Göttgens (Voorzitter BVD), J.P. Heijblom (Vice-voorzitter BVD), L. Bakker (Voorzitter Hodaco) en D. Bos (Director Inflight Services Procurement).</p>
+  <p class="hint" style="margin-top:8px">De CAO voor KLM-cabinepersoneel en de CAO voor KLM-vliegers staan te allen tijde boven dit document. Naast de cao's zijn de werkafspraken in dit document leidend voor de hotel-inkopers en de BVD bij hotelkeuze en het vaststellen van de daggelden. Bieden de cao's onvoldoende uitsluitsel, dan geldt dit document als leidraad. Bij nieuwe cao-afspraken worden bestaande hotelcontracten gerespecteerd; bij het aflopen van hotelcontracten worden nieuwe cao-afspraken meegenomen bij het afsluiten van een nieuw contract.</p>
+</section>
+
+<section class="panel">
+  <h2>Hotelaccommodatie</h2>
+  <div class="item"><b>Artikel 2a — Kamerformaat</b>
+    <p class="hint">"Een hotelkamer die niet kleiner zal zijn dan ca. 3x4 meter" (excl. badkamer, hal en nis).</p></div>
+  <div class="item"><b>Lichtdichte gordijnen</b>
+    <p class="hint">Black-out is toereikend wanneer tijdens daglicht de gordijnen gesloten worden en de tekst op papier niet meer leesbaar is.</p></div>
+  <div class="item"><b>Airconditioning en verwarming</b>
+    <p class="hint">Indien temperatuur of klimaat daartoe aanleiding geven: crewhotels dienen te beschikken over een regelbaar temperatuursysteem dat kan koelen én verwarmen, ongeacht de periode van het jaar, in lijn met de lokale wet- en regelgeving.</p></div>
+  <div class="item"><b>Voorziening tegen geluidshinder</b>
+    <ul class="lowlist">
+      <li>Geluidsniveau wordt getoetst op: 1) de gang, 2) omringende kamers, 3) werkzaamheden, 4) buiten.</li>
+      <li>Geen kamers nabij liften, ijsmachines, verkoopautomaten, ontbijt-/dinerzalen of vergader-/entertainmentzalen. Bij voorkeur ook niet nabij linnenkamers/schoonmaakruimtes.</li>
+      <li>Kamers met connecting doors worden uitgesloten, tenzij partijen onderling anders beslissen.</li>
+      <li>Vroege en late crews worden bij voorkeur van elkaar gescheiden.</li>
+      <li>Bij voorkeur kamers op de hogere verdieping, en zoveel mogelijk bij elkaar.</li>
+    </ul></div>
+  <div class="item"><b>Artikel 2b — Ligging</b>
+    <p class="hint">"Een redelijke ligging t.o.v. vliegveld, winkels en recreatiemogelijkheden in voldoende veilige omgeving en rekening houdend met unieke kenmerken van de bestemming." Uitgangspunt: overnachten in of nabij het centrum van de stad; 'hotels in the middle of nowhere' worden voorkomen. Lokale omstandigheden (veiligheid, ontbreken van één centraal centrum, onevenredig lange reistijd van/naar het vliegveld) kunnen aanleiding zijn voor een alternatieve locatie. Op basis van redelijkheid en argumenten kan hiervan worden afgeweken.</p></div>
+  <div class="item"><b>Artikel 2c — Service door hotelpersoneel</b>
+    <ul class="lowlist">
+      <li>Dinertijden: crews die met de vroege vlucht vertrekken moeten de avond voorafgaand tussen 17.00-19.00 uur LT kunnen dineren (of partijen komen onderling tot een alternatief).</li>
+      <li>Ontbijttijden Europa: het hotel regelt een ontbijt voor de vroegst vertrekkende crew, ook buiten de reguliere ontbijttijden.</li>
+      <li>Oostelijk gelegen stations: bij een tijdsverschil van 5 uur of meer, ontbijt tot 15:00 lokale tijd op rekening van KLM. Kan dit niet, dan wordt een ontbijtvergoeding in het daggeld opgenomen.</li>
+    </ul></div>
+  <div class="item"><b>Artikel 2d — Kwaliteitsniveau</b>
+    <p class="hint">"Een kwaliteitsniveau dat overeenkomt met dat van de bekende internationale hotelketens."</p></div>
+  <div class="item"><b>Artikel 2e — Sportfaciliteiten</b>
+    <p class="hint">"Sportfaciliteiten dienen in het hotel aanwezig te zijn. Het materiaal dient een veilige sport uitvoering mogelijk te maken, van deugdelijke kwaliteit te zijn en in voldoende mate aanwezig te zijn." Een fitnessruimte is voldoende uitgerust als er cardiomachines én minstens één fitnessapparaat en/of carrousel met gewichten aanwezig zijn, rekening houdend met de omvang van het hotel en de omvang van de aanwezige crew.</p></div>
+</section>
+
+<section class="panel">
+  <h2>Safety &amp; Security</h2>
+  <ul class="lowlist">
+    <li>De geldende Europese wet- en regelgeving (86/666/EEC) aangaande brandveiligheid dient aangehouden te worden. Maken lokale omstandigheden dit onmogelijk, dan treedt overleg met de SCO in werking voor mitigerende maatregelen.</li>
+    <li>De deur van een kamer dient ofwel een peephole óf een ketting/looplock te hebben.</li>
+    <li>Deuren in kamers met een connecting door dienen aan beide zijden een slot te hebben.</li>
+    <li>Evacuatieplan dient in kamers op of nabij de kamerdeur te hangen.</li>
+    <li>Smokedetectors en/of sprinklers dienen óf op kamerniveau óf in de gang waaraan de kamers grenzen aanwezig te zijn.</li>
+    <li>Nooduitgangen en evacuatieroute dienen duidelijk aangegeven te zijn en voorzien van noodverlichting; uitgangen en route dienen vrij van obstakels te zijn.</li>
+  </ul>
+</section>
+
+<section class="panel">
+  <h2>Daggelden</h2>
+  <p class="hint">Het daggeld wordt herberekend: als de daggeldsheets ouder dan 4 jaar zijn bij een contractverlenging, of bij een structurele verhuizing naar een ander hotel.</p>
+  <div class="item"><b>Artikel 2b — Grondslag vergoedingen</b>
+    <p class="hint">"Deze vergoedingen worden bepaald op grond van de prijzen (incl. fooien en belasting) van het hotel van verblijf en — afhankelijk van de omstandigheden — zo mogelijk drie plaatselijke restaurants van voldoende kwaliteit."</p>
+    <ul class="lowlist">
+      <li>Tip op NAD zit inbegrepen in de kamerprijs (ontbijt) en wordt niet apart uitgekeerd in het daggeld. Wordt er wél daggeld uitgekeerd, dan 20% (USA) / 18% (CAN) tip.</li>
+      <li>In hotels en bij buitenrestaurants worden in principe drie representatieve restaurants meegenomen (voorkeur: keuze in overleg tussen Procurement en Hodaco).</li>
+      <li>Representatief = niet de goedkoopste/duurste, geen sterrenrestaurants, sitdown met bediening (geen fastfood/afhaal), op een centrale plek.</li>
+      <li>All day dining menu wordt standaard meegenomen. Is ontbijt niet in de kamerprijs inbegrepen, dan alleen hotel-restaurants meegenomen; is er geen cao-compliant ontbijt, dan drie buitenrestaurants.</li>
+    </ul></div>
+  <div class="item"><b>Artikel 3a — Normen maaltijden</b>
+    <ul class="lowlist">
+      <li><b>Ontbijt:</b> vruchtensap, 2 eieren met ham, brood, boter en thee of koffie.</li>
+      <li><b>Lunch:</b> eenvoudige schotel en koffie.</li>
+      <li><b>Diner:</b> soep, hoofdschotel, dessert en koffie.</li>
+    </ul>
+    <p class="hint">Bij lokale omstandigheden kunnen i.p.v. vergoeding één of meer maaltijden in natura worden verstrekt. All inclusive is uitgesloten tenzij anders besloten.</p></div>
+  <div class="item"><b>Artikel 4b — Sundries (basis 24 uur)</b>
+    <ul class="lowlist">
+      <li><b>Dranken:</b> koffie op basis van filter/americain; bier op basis van een normaal tapbiertje; standaard prijzen buitenrestaurants (anders hotelprijzen).</li>
+      <li><b>Ontspanning:</b> gemiddelde toegangsprijs bioscoop (reguliere doordeweekse avondvoorstelling), zwembad en sportgelegenheid. Zwembad = bad om in te zwemmen (geen jacuzzi/bubbelbad). Binnenzwembad, of buitenzwembad dat 's winters niet open is: pro rato vergoeding. Geen fitness/zwembad (ook niet publiek) beschikbaar: geen vergoeding.</li>
+      <li><b>Plaatselijk transport:</b> bij geen kosteloos vervoer — 4 bus-/tramritten, of (geen/onvoldoende OV) 50% van een retourrit hotel-stad per taxi.</li>
+      <li><b>Fooien:</b> 1 dollar fooi voor housekeeping en/of chauffeurs als vermeld in de CDI; geldt voor alle stations binnen geografisch Afrika.</li>
+    </ul></div>
+</section>
+
+<section class="panel">
+  <h2>Berekeningsgrondslagen daggeld</h2>
+  <ul class="lowlist">
+    <li>Movie: toegangsbewijs bioscoop, geen "pay-tv". Sport: gedeeld door 3 (movie/zwembad/sport), tenzij pool+sport in één faciliteit voor 1 bedrag — dan gedeeld door 2.</li>
+    <li>Vervoer: 4x prijs OV bij geen gratis shuttle; anders one-way taxirit hotel-centrum.</li>
+    <li>Ontbijt/lunch/diner-normen: appetizers, schaal-/schelpdieren (bijv. kreeft) en roomservice worden niet meegerekend. Dure/exclusieve restaurants, buffetten/set-menu's en ontoereikende barmenu's tellen niet mee. Korting wordt met een maximum van 30% berekend.</li>
+    <li>Vegetarische, nasi/bami/oriëntaalse, pasta- en pizzagerechten tellen mee; bij small/medium/large alleen medium; bij Oosterse keuken telt rijst altijd mee; steak tot 250 gram; ijs per bolletje: 2 bolletjes per dessert.</li>
+  </ul>
+</section>
+
+<section class="panel">
+  <h2>Algemene afspraken</h2>
+  <div class="item"><b>Tijdelijk hotel</b>
+    <p class="hint">Bij een tijdelijke hotelwissel korter dan één maand wordt het daggeld niet herberekend (het reguliere daggeld blijft gelden), tenzij zwaarwegende argumenten. Wordt een deel van de crew door onvoorziene redenen tijdelijk elders ondergebracht, dan geldt voor hen ook het daggeld van het reguliere hotel.</p></div>
+  <div class="item"><b>Survey-proces</b>
+    <p class="hint">Bij een nieuwe bestemming, serieuze aanhoudende klachten, of andere redenen om van crewhotel te veranderen, vindt een survey plaats. Hieraan nemen vertegenwoordigers van GC Vliegers en GC Cabine deel (voor KLC: Groepscommissie). In onderling overleg kan ook zonder survey een keuze worden gemaakt.</p>
+    <ul class="lowlist">
+      <li>Circa 6 maanden voor afloop van het contract / opstarten nieuw station start Procurement het marktonderzoek (RFP naar hotels; Hodaco kan ook hotels aandragen).</li>
+      <li>AK (Health Services) en AV (Security Services) worden waar relevant geïnformeerd en om informatie gevraagd.</li>
+      <li>Zonder alternatieve opties: Procurement stelt een decision sheet voor om het huidige contract te verlengen.</li>
+      <li>Bij voldoende reacties: longlist → shortlist (o.b.v. lokale situatie, AK/AV-input, feedback crew via trip reports) → voorgelegd aan BVD, beoordeeld op de driehoek: cao-compliance, kosten efficiency en crewbeleving.</li>
+      <li>Na akkoord op de shortlist wordt Hodaco min. 7 weken van tevoren geïnformeerd over de surveydata; Hodaco regelt zelf het rooster met P&amp;A.</li>
+      <li>Na de survey informeert Procurement AK en AV; op basis van AK-/AV-rapport en Hodaco-advies neemt de BVD het besluit, bekrachtigd in het BVD-Hodaco-overleg. Crew Facilities verzorgt de verslaglegging.</li>
+    </ul></div>
+</section>
+
+<section class="panel">
+  <h2>Bijlage 1 — Uitwisseling KLC-KLM stations</h2>
+  <ul class="lowlist">
+    <li><b>Overgang KLC → KLM:</b> KLM gaat 1-op-1 over naar het KLC-hotel (identieke cao-delen).</li>
+    <li><b>Overgang KLM → KLC:</b> KLC gaat 1-op-1 over naar het KLM-hotel (identieke cao-delen).</li>
+    <li><b>Nieuw af te sluiten contracten:</b> de startende carrier leidt het surveyproces. Bij te verlengen Europese contracten: de carrier die het voorafgaande jaar de voornaamste afnemer van hotelkamers was. Groepscommissie 51 en Hodaco overleggen hierover; de bedrijfsleiding van de betreffende carrier neemt (na advies) de eindbeslissing, gedeeld met BVD/Hodaco resp. KLC Flight Operations/Groepscommissie 51.</li>
+  </ul>
+</section>
+
+<section class="panel">
+  <h2>Openstaand punt (geen overeenstemming)</h2>
+  <p class="hint">Bijlage 13, 4.2: Sundries bestaan uit zwembad, gym en bioscoop. Bij de cao-aanpassing 2018-2019 ('Sportfaciliteiten dienen in het hotel aanwezig te zijn') is geen afspraak gemaakt over hoe sundries te berekenen in de nieuwe situatie. Procurement: de gym komt 'op 0' te staan, sundries gedeeld door 3 (huidige werkwijze). Hodaco: sundries dienen door 2 gedeeld te worden. Partijen komen hier niet uit; Hodaco stuurt input, de huidige manier blijft vooralsnog uitgevoerd worden.</p>
+</section>
+`;
+
+function renderDocs(){
+  setBar(`<button class="icon-btn" data-a="docsback" aria-label="Terug">←</button><h1>Werkafspraken Hodaco</h1>`);
+  $('#app').innerHTML = DOC_HTML;
+  setDock('');
+}
+
 /* ---------- Swipe to delete (home list) ---------- */
 const SWIPE_W=88;
 let swipe=null, suppressClick=false;
@@ -927,6 +1057,8 @@ document.addEventListener('click', e=>{
   else if(a==='share') sharePdf(s);
   else if(a==='savepdf') savePdf(s);
   else if(a==='export') exportAll();
+  else if(a==='docs'){ const from={...view}; view={name:'docs', from}; render(); }
+  else if(a==='docsback'){ view=view.from||{name:'home'}; render(); }
   else if(a==='versiontap'){
     clearTimeout(versionTapTimer); versionTaps++;
     versionTapTimer=setTimeout(()=>{ versionTaps=0; },1500);
@@ -1095,7 +1227,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.14.1';
+const APP_VERSION='1.15.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
