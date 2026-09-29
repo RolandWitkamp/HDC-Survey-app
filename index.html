@@ -616,6 +616,10 @@ function findAirportByIata(data,code){
   return Object.values(data).find(a=>a.iata===up)||null;
 }
 async function geocode(query){
+  if(S.googleMapsKey && await loadGoogleMaps()){
+    const g=await googleGeocode(query);
+    if(g) return g;
+  }
   const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`);
   if(!res.ok) throw 0;
   const list=await res.json();
@@ -636,7 +640,7 @@ function scheduleDriveTimeLookup(s){
   if(addr.length<5 || code.length!==3) return;
   driveTimer=setTimeout(()=>tryFetchDriveTime(s),800);
 }
-let hotelSuggestTimer=null, hotelSuggestCache=[];
+let hotelSuggestTimer=null, hotelSuggestCache={viaGoogle:false,list:[]};
 function scheduleHotelSuggest(s){
   clearTimeout(hotelSuggestTimer);
   const box=document.querySelector('[data-hotel-suggest]');
@@ -651,14 +655,24 @@ async function fetchHotelSuggestions(s,q){
     let searchQ=q;
     const code=(s.city||'').trim();
     if(code.length===3){ const airports=await loadAirportsData(); const airport=findAirportByIata(airports,code); if(airport?.city) searchQ=`${q}, ${airport.city}`; }
-    const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&namedetails=1&q=${encodeURIComponent(searchQ)}`);
-    if(!res.ok) throw 0;
-    const list=await res.json();
-    if((s.hotel||'').trim()!==q) return;
-    hotelSuggestCache=list;
+    let list=[], viaGoogle=false;
+    if(S.googleMapsKey && await loadGoogleMaps() && ensurePlacesServices()){
+      const preds=await googlePlacePredictions(searchQ);
+      if((s.hotel||'').trim()!==q) return;
+      if(preds.length){ list=preds.slice(0,5); viaGoogle=true; }
+    }
+    if(!viaGoogle){
+      const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&namedetails=1&q=${encodeURIComponent(searchQ)}`);
+      if(!res.ok) throw 0;
+      list=await res.json();
+      if((s.hotel||'').trim()!==q) return;
+    }
+    hotelSuggestCache={viaGoogle,list};
     if(!list.length){ box.hidden=true; box.innerHTML=''; return; }
-    box.innerHTML=list.map((hit,i)=>{ const name=hit.namedetails?.name||hit.display_name.split(',')[0];
-      return `<button type="button" data-a="pickhotel" data-i="${i}"><b>${esc(name)}</b><br><span class="hint">${esc(hit.display_name)}</span></button>`; }).join('');
+    box.innerHTML = viaGoogle
+      ? list.map((p,i)=>`<button type="button" data-a="pickhotel" data-i="${i}"><b>${esc(p.structured_formatting?.main_text||p.description)}</b><br><span class="hint">${esc(p.structured_formatting?.secondary_text||p.description)}</span></button>`).join('')
+      : list.map((hit,i)=>{ const name=hit.namedetails?.name||hit.display_name.split(',')[0];
+          return `<button type="button" data-a="pickhotel" data-i="${i}"><b>${esc(name)}</b><br><span class="hint">${esc(hit.display_name)}</span></button>`; }).join('');
     box.hidden=false;
   }catch(e){ box.hidden=true; }
 }
@@ -670,7 +684,7 @@ function loadGoogleMaps(){
   gmapsLoading=new Promise(resolve=>{
     try{
       const script=document.createElement('script');
-      script.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(S.googleMapsKey)}&loading=async`;
+      script.src=`https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(S.googleMapsKey)}&libraries=places&loading=async`;
       script.async=true;
       script.onload=()=>resolve(!!window.google?.maps?.DirectionsService);
       script.onerror=()=>resolve(false);
@@ -678,6 +692,37 @@ function loadGoogleMaps(){
     }catch(e){ resolve(false); }
   });
   return gmapsLoading;
+}
+let acService=null, placesService=null;
+function ensurePlacesServices(){
+  if(!window.google?.maps?.places) return false;
+  try{
+    if(!acService) acService=new google.maps.places.AutocompleteService();
+    if(!placesService) placesService=new google.maps.places.PlacesService(document.createElement('div'));
+    return true;
+  }catch(e){ return false; }
+}
+function googlePlacePredictions(query){
+  return new Promise(resolve=>{
+    try{ acService.getPlacePredictions({input:query, types:['lodging']}, (preds,status)=>{ resolve(status==='OK'&&preds?preds:[]); }); }
+    catch(e){ resolve([]); }
+  });
+}
+function googlePlaceDetails(placeId){
+  return new Promise(resolve=>{
+    try{ placesService.getDetails({placeId, fields:['name','formatted_address','geometry']}, (place,status)=>{ resolve(status==='OK'?place:null); }); }
+    catch(e){ resolve(null); }
+  });
+}
+function googleGeocode(query){
+  return new Promise(resolve=>{
+    try{
+      new google.maps.Geocoder().geocode({address:query}, (results,status)=>{
+        if(status==='OK'&&results?.[0]) resolve({lat:results[0].geometry.location.lat(), lon:results[0].geometry.location.lng()});
+        else resolve(null);
+      });
+    }catch(e){ resolve(null); }
+  });
 }
 function googleDrivingSeconds(from,to){
   return new Promise(resolve=>{
@@ -831,15 +876,16 @@ function renderSettings(){
       <p class="hint" style="margin-top:8px">Gebruikt het adres en de city code om via OpenStreetMap een schatting te maken (geen actueel verkeer). Dit is een gratis publieke dienst zonder garanties — kan af en toe leeg blijven, traag zijn of net niet kloppen. Je kunt de uitkomst altijd zelf overschrijven.</p>
       ${advancedUnlocked?`
       <label class="f">Google Maps API-sleutel (optioneel)<input type="password" data-set="googleMapsKey" value="${esc(S.googleMapsKey)}" autocomplete="off" placeholder="Plak hier je sleutel"></label>
-      <p class="hint" style="margin-top:8px">Vul je hier een sleutel in, dan wordt de rijtijd voortaan via Google Maps berekend mét actueel verkeer/files, in plaats van de basisschatting hierboven. Zelf een sleutel maken:</p>
+      <p class="hint" style="margin-top:8px">Vul je hier een sleutel in, dan gebruikt de app Google in plaats van de gratis basisdiensten: rijtijd mét actueel verkeer, en een veel betere hotel-zoekfunctie/adresherkenning (bijv. in regio's waar OpenStreetMap weinig data heeft). Zelf een sleutel maken:</p>
       <ol class="hint" style="margin:6px 0 0;padding-left:18px">
         <li>Ga naar console.cloud.google.com en maak een project aan (of gebruik een bestaand project).</li>
         <li>Koppel een facturatieaccount (Billing) — verplicht, maar je gratis maandelijkse tegoed dekt dit gebruik ruimschoots.</li>
-        <li>Ga naar "APIs & Services &gt; Library" en schakel zowel "Maps JavaScript API" als "Directions API" in.</li>
+        <li>Ga naar "APIs & Services &gt; Library" en schakel "Maps JavaScript API", "Directions API", "Places API" én "Geocoding API" in.</li>
         <li>Ga naar "APIs & Services &gt; Credentials &gt; Create Credentials &gt; API key".</li>
-        <li>Open de nieuwe sleutel: zet bij "Application restrictions" &gt; "Websites" het adres <code>rolandwitkamp.github.io/*</code>, en bij "API restrictions" alleen de twee APIs hierboven aan.</li>
+        <li>Open de nieuwe sleutel: zet bij "Application restrictions" &gt; "Websites" het adres <code>rolandwitkamp.github.io/*</code>, en bij "API restrictions" alle vier de APIs hierboven aan.</li>
         <li>Kopieer de sleutel en plak 'm hier.</li>
       </ol>
+      <p class="hint" style="margin-top:8px">Had je al een sleutel voor de rijtijd? Ga dan terug naar Credentials, open je bestaande sleutel, en vink bij "API restrictions" ook "Places API" en "Geocoding API" aan.</p>
       <p class="hint" style="margin-top:8px">Na het opslaan of wijzigen van de sleutel moet je de app eenmalig volledig afsluiten en heropenen.</p>`:''}
     </section>
     <section class="panel"><h2>Luchtkwaliteit bestemming</h2>
@@ -1038,7 +1084,7 @@ document.addEventListener('click', e=>{
 });
 
 /* ---------- Events ---------- */
-document.addEventListener('click', e=>{
+document.addEventListener('click', async e=>{
   if(suppressClick) return;
   const b=e.target.closest('[data-a]'); if(!b) return;
   const a=b.dataset.a, s=cur();
@@ -1074,13 +1120,21 @@ document.addEventListener('click', e=>{
     document.querySelector(`#sec-${id}`)?.scrollIntoView({behavior:'smooth',block:'start'}); }
   else if(a==='pickta'){ const key=b.dataset.id, v=b.dataset.v; const inp=document.querySelector(`[data-k="${key}"]`); if(inp) inp.value=v; s.f[key]=v; touch(s);
     b.closest('.ta-list').hidden=true; }
-  else if(a==='pickhotel'){ const hit=hotelSuggestCache[Number(b.dataset.i)]; if(!hit) return;
-    const name=hit.namedetails?.name||hit.display_name.split(',')[0];
-    s.hotel=name; s.address=hit.display_name||''; s.hotelLat=parseFloat(hit.lat); s.hotelLon=parseFloat(hit.lon); touch(s);
+  else if(a==='pickhotel'){ const hit=hotelSuggestCache.list[Number(b.dataset.i)]; if(!hit) return;
+    const box=b.closest('.ta-list'); box.hidden=true;
+    let name, address, lat, lon;
+    if(hotelSuggestCache.viaGoogle){
+      const place=await googlePlaceDetails(hit.place_id); if(!place) return;
+      name=place.name||hit.structured_formatting?.main_text||''; address=place.formatted_address||'';
+      lat=place.geometry?.location?.lat(); lon=place.geometry?.location?.lng();
+    } else {
+      name=hit.namedetails?.name||hit.display_name.split(',')[0]; address=hit.display_name||'';
+      lat=parseFloat(hit.lat); lon=parseFloat(hit.lon);
+    }
+    s.hotel=name; s.address=address; s.hotelLat=lat; s.hotelLon=lon; touch(s);
     $('#bar h1').textContent=title(s);
     const hInput=document.querySelector('[data-top="hotel"]'); if(hInput) hInput.value=name;
     const aInput=document.querySelector('[data-top="address"]'); if(aInput) aInput.value=s.address;
-    b.closest('.ta-list').hidden=true;
     scheduleDriveTimeLookup(s); scheduleAirQualityLookup(s); }
   else if(a==='delphoto'){ s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); b.closest('.photo').remove(); }
   else if(a==='addgroup'){ S.groups.push({id:uid(),name:'',to:'',cc:''}); persist(); render(); }
@@ -1273,7 +1327,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.19.0';
+const APP_VERSION='1.20.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
