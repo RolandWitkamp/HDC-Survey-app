@@ -312,21 +312,47 @@ const TIME_SLOTS = Array.from({length:48},(_,i)=>`${String(Math.floor(i/2)).padS
 
 /* ---------- Storage (IndexedDB, falls back to memory) ---------- */
 const store = {
-  db:null, mem:{},
-  open(){ return new Promise(res=>{ try{ const r=indexedDB.open('hotel-survey',1);
-    r.onupgradeneeded=()=>r.result.createObjectStore('kv');
-    r.onsuccess=()=>{this.db=r.result;res()}; r.onerror=()=>res(); }catch(e){res()} }); },
-  get(k){ if(!this.db) return Promise.resolve(this.mem[k]); return new Promise(res=>{ try{
-    const q=this.db.transaction('kv').objectStore('kv').get(k); q.onsuccess=()=>res(q.result); q.onerror=()=>res(undefined);}catch(e){res(undefined)} }); },
-  set(k,v){ this.mem[k]=v; if(!this.db) return Promise.resolve(); return new Promise(res=>{ try{
-    const t=this.db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k); t.oncomplete=()=>res(); t.onerror=()=>{toast('Opslaan mislukt: opslag van dit apparaat is vol of geblokkeerd.');res()}; }catch(e){res()} }); }
+  db:null, mem:{}, opening:null,
+  open(){
+    if(this.db) return Promise.resolve();
+    if(this.opening) return this.opening;
+    this.opening = new Promise(res=>{ try{ const r=indexedDB.open('hotel-survey',1);
+      r.onupgradeneeded=()=>r.result.createObjectStore('kv');
+      r.onsuccess=()=>{ this.db=r.result; this.opening=null;
+        this.db.onclose=()=>{ this.db=null; };
+        this.db.onversionchange=()=>{ try{this.db.close();}catch(e){} this.db=null; };
+        res(); };
+      r.onerror=()=>{ this.db=null; this.opening=null; res(); }; }catch(e){ this.db=null; this.opening=null; res(); } });
+    return this.opening;
+  },
+  async get(k){
+    if(!this.db) await this.open();
+    if(!this.db) return this.mem[k];
+    return new Promise(res=>{ try{
+      const q=this.db.transaction('kv').objectStore('kv').get(k);
+      q.onsuccess=()=>res(q.result); q.onerror=()=>res(this.mem[k]);
+    }catch(e){ this.db=null; res(this.mem[k]); } });
+  },
+  async set(k,v){
+    this.mem[k]=v;
+    if(!this.db) await this.open();
+    if(!this.db){ toast('Opslaan mislukt: opslag kon niet geopend worden. Sluit de app volledig af en open hem opnieuw.'); return; }
+    return new Promise(res=>{ try{
+      const t=this.db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k);
+      t.oncomplete=()=>res();
+      t.onerror=()=>{ toast('Opslaan mislukt: opslag van dit apparaat is vol of geblokkeerd.'); res(); };
+    }catch(e){ this.db=null; toast('Opslaan mislukt: sluit de app volledig af en open hem opnieuw.'); res(); } });
+  }
 };
 let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'' };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
 let advancedUnlocked = false, versionTaps = 0, versionTapTimer = null;
 let saveTimer=null;
-function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); },300); }
+function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); }
+function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(flushPersist,300); }
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden' && saveTimer) flushPersist(); });
+window.addEventListener('pagehide', ()=>{ if(saveTimer) flushPersist(); });
 
 /* ---------- Helpers ---------- */
 const $ = s=>document.querySelector(s);
@@ -346,6 +372,7 @@ function dateSelectHTML(s){
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),3800); }
 const cur = ()=>{ const s=S.surveys.find(x=>x.id===view.id); if(s){ s.scores=s.scores||{}; s.compliance=s.compliance||{}; if(s.caoAuto===undefined) s.caoAuto=true; if(s.driveTimeAuto===undefined) s.driveTimeAuto=true; if(s.airQualityAuto===undefined) s.airQualityAuto=true; if(s.address===undefined) s.address=''; } return s; };
 const title = s=>s.hotel||'Naamloos hotel';
+const surveyedBy = s=>[s.reps,s.inspector].filter(Boolean).join(' & ');
 const nonEmpty = v=>Array.isArray(v)?v.length>0:(v!=null&&String(v).trim()!=='');
 
 function filled(s,f){
@@ -369,7 +396,8 @@ function avgScore(s){ const vals=Object.values(s.scores||{}).filter(v=>v!=null);
 function sectionCompliance(s,sec){ const vals=sec.fields.map(f=>s.compliance?.[f.id]).filter(Boolean);
   if(vals.includes('Non-compliant')) return 'Non-compliant';
   if(vals.includes('Compliant')) return 'Compliant';
-  return 'Not assessed'; }
+  if(sec.fields.some(f=>isFlag(s,f))) return 'Not assessed';
+  return 'Compliant'; }
 
 const sliderText = (f,val)=>`${val}% ${f.left} · ${100-val}% ${f.right}`;
 
@@ -459,6 +487,7 @@ function renderEdit(){
       <p class="hint">Maak of kies een foto en geef 'm een label, bijv. Breakfast, Gym of Room 512.</p>
       <div class="photos" data-photos>${photosHTML(s)}</div>
       <label class="add-photo">📷 Foto toevoegen<input type="file" accept="image/*" multiple data-photo="1"></label>
+      ${s.photos.length?`<button type="button" class="btn wide" style="margin-top:10px" data-a="savephotos">Bewaar foto's in fotobibliotheek</button>`:''}
     </section>
     ${SECTIONS.map(sec=>`
     <section class="panel" id="sec-${sec.id}">
@@ -638,6 +667,20 @@ function photosHTML(s){
     <div class="photo-img"><img src="${p.data}" alt="Foto"><button data-a="delphoto" data-pid="${p.id}" aria-label="Foto verwijderen">×</button></div>
     <input class="photo-label" data-photolabel="${p.id}" value="${esc(p.label)}" placeholder="Label, bijv. Breakfast">
   </div>`).join('');
+}
+function dataUrlToFile(dataUrl,filename){
+  const [meta,b64]=dataUrl.split(','); const mime=/data:(.*?);/.exec(meta)[1];
+  const bin=atob(b64); const arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  return new File([arr],filename,{type:mime});
+}
+async function savePhotosToLibrary(s){
+  const files=s.photos.map((p,i)=>dataUrlToFile(p.data,`${(p.label||'foto').replace(/[^a-z0-9]+/gi,'-')||'foto-'+(i+1)}.jpg`));
+  if(navigator.canShare?.({files})){
+    try{ await navigator.share({files}); }catch(e){ if(e.name!=='AbortError') toast('Bewaren is niet gelukt.'); }
+    return;
+  }
+  toast('Delen van foto\'s wordt hier niet ondersteund.');
 }
 
 /* ---------- Driving time to airport (best-effort, via OpenStreetMap/OSRM) ---------- */
@@ -857,6 +900,10 @@ function refreshStats(){
   $('#chips').innerHTML=chipsHTML(s);
   SECTIONS.forEach(sec=>{ const el=document.querySelector(`[data-meta="${sec.id}"]`); if(el) el.innerHTML=metaHTML(s,sec); });
   setDock(editDockHTML(s));
+  if(doneCount(s)===TOTAL && !s.backupPrompted){
+    s.backupPrompted=true; persist();
+    if(confirm('Survey afgerond! Back-up maken naar iCloud Drive (of Bestanden)?')) exportAll();
+  }
 }
 
 function renderReport(){
@@ -1192,6 +1239,7 @@ document.addEventListener('click', async e=>{
     const aInput=document.querySelector('[data-top="address"]'); if(aInput) aInput.value=s.address;
     scheduleDriveTimeLookup(s); scheduleAirQualityLookup(s); }
   else if(a==='delphoto'){ s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); b.closest('.photo').remove(); }
+  else if(a==='savephotos'){ savePhotosToLibrary(s); }
   else if(a==='addgroup'){ S.groups.push({id:uid(),name:'',to:'',cc:''}); persist(); render(); }
   else if(a==='delgroup'){ S.groups=S.groups.filter(g=>g.id!==b.dataset.gid); persist(); render(); }
   else if(a==='marksent'){ s.status = s.status==='verzonden'?'concept':'verzonden'; touch(s); render(); toast(s.status==='verzonden'?'Gemarkeerd als verzonden':'Teruggezet naar concept'); }
@@ -1295,7 +1343,7 @@ function subject(s){ return `Pillow Report ${title(s)}${s.city?' ('+s.city+')':'
 function mailBody(s){
   const fl=flags(s);
   const lines=[`Pillow Report: ${title(s)}${s.city?' ('+s.city+')':''}`,
-    `Date: ${dateNL(s.date)}${s.inspector?' | Surveyed by: '+s.inspector:''}${s.reps?' | Hodaco Rep: '+s.reps:''}`,
+    `Date: ${dateNL(s.date)}${surveyedBy(s)?' | Surveyed by: '+surveyedBy(s):''}`,
     `CAO compliant: ${caoText(s)}`, '',
     fl.length?`Findings (${fl.length}):`:'Findings: none', ...fl.map(f=>`- ${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`)];
   if(nonEmpty(s.f.otherInfo)) lines.push('','Other information:',s.f.otherInfo);
@@ -1322,7 +1370,7 @@ function makePdf(s){
   doc.setFillColor(...INK); doc.rect(0,0,W,36,'F');
   setF(9,'bold',[170,190,215]); doc.text('HOTEL SURVEY',M,12);
   setF(18,'bold',[255,255,255]); doc.text(wrap(title(s),CW-40,18)[0],M,22);
-  setF(9,'normal',[200,212,228]); doc.text([s.city,dateNL(s.date),s.inspector?'Surveyed by '+s.inspector:''].filter(Boolean).join('   |   '),M,30);
+  setF(9,'normal',[200,212,228]); doc.text([s.city,dateNL(s.date),surveyedBy(s)?'Surveyed by '+surveyedBy(s):''].filter(Boolean).join('   |   '),M,30);
   // Verdict
   const fl=flags(s); const vc = s.f.cao==='No'?RED : fl.length?AMBER : s.f.cao==='Yes'?GREEN : MUTED;
   y=44; doc.setFillColor(...vc); doc.roundedRect(M,y,CW,16,2,2,'F');
@@ -1335,7 +1383,7 @@ function makePdf(s){
     const L=wrap(label,LW,9.5), V=wrap(val||'-',VW,9.5); const h=Math.max(L.length,V.length)*4.6+2.4;
     ensure(h); setF(9.5,bold?'bold':'normal',MUTED); doc.text(L,M,y+4);
     setF(9.5,red?'bold':'normal',red?RED:(val?INK:MUTED)); doc.text(V,VX,y+4); y+=h; };
-  row('Hotel name',s.hotel); row('City code',s.city); row('Hodaco Rep',s.reps);
+  row('Hotel name',s.hotel); row('City code',s.city); row('Hodaco Rep',s.reps); row('NI Rep',s.inspector);
   // Findings summary
   if(fl.length){ y+=4; ensure(12); setF(12,'bold'); doc.text('Findings',M,y+4); y+=8;
     fl.forEach(f=>{ const L=wrap(`${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`,CW-6,9.5); ensure(L.length*4.6+2);
@@ -1382,7 +1430,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.24.0';
+const APP_VERSION='1.28.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
