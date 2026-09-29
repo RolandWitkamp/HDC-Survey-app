@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <clipPath id="badgeInner"><rect x="150" y="180" width="212" height="152" rx="40"/></clipPath>
+    <clipPath id="badgeInner"><rect x="66" y="120" width="380" height="272" rx="72"/></clipPath>
   </defs>
   <rect width="512" height="512" fill="#13233A"/>
-  <rect x="150" y="180" width="212" height="152" rx="40" fill="#0EA5E9"/>
+  <rect x="66" y="120" width="380" height="272" rx="72" fill="#0EA5E9"/>
   <g clip-path="url(#badgeInner)">
-    <rect x="164" y="194" width="184" height="124" rx="28" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-dasharray="9 8"/>
+    <rect x="91" y="145" width="330" height="222" rx="50" fill="none" stroke="#FFFFFF" stroke-width="9" stroke-dasharray="16 14"/>
   </g>
-  <rect x="216" y="206" width="80" height="100" rx="22" fill="#FFFFFF"/>
-  <path d="M 233 256 L 251 274 L 281 236" fill="none" stroke="#0EA5E9" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="184" y="167" width="143" height="179" rx="39" fill="#FFFFFF"/>
+  <path d="M 215 256 L 247 289 L 301 220" fill="none" stroke="#0EA5E9" stroke-width="23" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
