@@ -777,6 +777,7 @@ function renderReport(){
         <button class="btn" data-a="savepdf">1. PDF opslaan</button>
         <button class="btn primary" data-a="mail">2. Mail opstellen</button>
         <button class="btn" data-a="share">Delen met PDF</button>
+        <button class="btn" data-a="saveword">Word-document opslaan (bewerkbaar)</button>
         <button class="btn" data-a="marksent">${s.status==='verzonden'?'Terugzetten naar concept':'Markeer als verzonden'}</button>
       </div>
     </section>`;
@@ -1061,6 +1062,7 @@ document.addEventListener('click', e=>{
   else if(a==='mail') openMail(s);
   else if(a==='share') sharePdf(s);
   else if(a==='savepdf') savePdf(s);
+  else if(a==='saveword') saveWord(s);
   else if(a==='export') exportAll();
   else if(a==='docs'){ const from={...view}; view={name:'docs', from}; render(); }
   else if(a==='docsback'){ view=view.from||{name:'home'}; render(); }
@@ -1232,7 +1234,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.16.1';
+const APP_VERSION='1.17.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
@@ -1243,6 +1245,44 @@ async function savePdf(s){
     if(navigator.canShare?.({files:[file]})){ try{ await navigator.share({files:[file]}); }catch(e){} return; }
   }
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=pdfName(s); document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+
+const wordName = s=>pdfName(s).replace(/\.pdf$/i,'.doc');
+function makeWordHtml(s){
+  const fl=flags(s), avg=avgScore(s);
+  const row=f=>{ if(f.id==='otherInfo') return '';
+    const flagged=isFlag(s,f), val=valueText(s,f)||'-', note=s.notes[f.id]?` <i>(${esc(s.notes[f.id])})</i>`:'';
+    const col=flagged?'color:#C2413B;font-weight:bold;':'';
+    return `<tr><td style="padding:4px 8px;border:1px solid #ccc;${col}">${esc(f.label)}</td><td style="padding:4px 8px;border:1px solid #ccc;${col}">${esc(val).replace(/\n/g,'<br>')}${note}</td></tr>`; };
+  const sections=SECTIONS.map(sec=>{ const cv=sectionCompliance(s,sec);
+    const cc=cv==='Non-compliant'?'#C2413B':cv==='Compliant'?'#1F7A5C':'#5B6B80';
+    return `<h2 style="color:#13233A;font-family:Calibri,Arial,sans-serif;font-size:14pt;">${esc(sec.name)} <span style="font-size:11pt;font-weight:normal;color:${cc}">(${esc(cv)})</span></h2>
+      <table style="border-collapse:collapse;width:100%;font-family:Calibri,Arial,sans-serif;font-size:10.5pt;margin-bottom:18px;">${sec.fields.map(row).join('')}</table>`; }).join('');
+  const findings = fl.length ? `<ul>${fl.map(f=>`<li><b>${esc(f.label)}</b>: ${esc(valueText(s,f))}${s.notes[f.id]?' — '+esc(s.notes[f.id]):''}</li>`).join('')}</ul>` : '<p>Geen bevindingen.</p>';
+  const other = nonEmpty(s.f.otherInfo) ? `<h2 style="font-family:Calibri,Arial,sans-serif;">Other information</h2><p style="font-family:Calibri,Arial,sans-serif;">${esc(s.f.otherInfo).replace(/\n/g,'<br>')}</p>` : '';
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>${esc(title(s))}</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+</head>
+<body style="font-family:Calibri,Arial,sans-serif;">
+<h1 style="color:#13233A;">${esc(title(s))}</h1>
+<p>${esc([s.city,dateNL(s.date),s.reps,s.inspector].filter(Boolean).join(', '))}</p>
+<p><b>CAO compliant:</b> ${esc(caoText(s))} &nbsp;|&nbsp; <b>${fl.length}</b> finding${fl.length===1?'':'s'}${avg!=null?` &nbsp;|&nbsp; <b>Gemiddelde score:</b> ${avg.toFixed(1)}/10`:''}</p>
+<h2 style="font-family:Calibri,Arial,sans-serif;">Findings</h2>
+${findings}
+${sections}
+${other}
+<p style="font-size:8pt;color:#888;">made by Pillow Report</p>
+</body></html>`;
+}
+async function saveWord(s){
+  const blob=new Blob(['﻿'+makeWordHtml(s)],{type:'application/msword'});
+  if(downloads){ try{ await downloads.save({filename:wordName(s),data:blob}); toast('Word-bestand opgeslagen'); }catch(e){ if(e?.code!=='declined') toast('Opslaan lukt hier niet. Gebruik Delen.'); } return; }
+  const file=new File([blob],wordName(s),{type:'application/msword'});
+  if(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)){
+    if(navigator.canShare?.({files:[file]})){ try{ await navigator.share({files:[file]}); }catch(e){} return; }
+  }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=wordName(s); document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
 async function exportSurvey(s){
   const name=`Survey ${title(s).replace(/[\\/:*?"<>|]/g,'')} ${s.city||''} ${s.date||''}.json`.replace(/\s+/g,' ');
