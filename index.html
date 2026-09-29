@@ -182,6 +182,9 @@ textarea{resize:vertical;min-height:72px}
 .ta-list button{display:block;width:100%;text-align:left;border:0;background:none;border-top:1px solid var(--line);padding:10px 12px;font-weight:400}
 .ta-list button:first-child{border-top:0}
 .rest{display:grid;grid-template-columns:1fr;gap:6px;padding:8px 0}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.tag{display:inline-flex;align-items:center;gap:6px;background:var(--soft);border-radius:99px;padding:6px 6px 6px 12px;font-size:.85rem;font-weight:700}
+.tag button{border:0;background:none;color:var(--muted);width:18px;height:18px;line-height:1;font-size:1rem;padding:0}
 .nearby-item{margin-top:10px}
 .nearby-item:first-child{margin-top:0}
 .chips-wrap{position:sticky;top:calc(env(safe-area-inset-top,0px) + 64px);z-index:9;background:var(--bg);margin:0 -16px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center}
@@ -245,7 +248,7 @@ const SECTIONS = [
     {id:'otherFacilities', label:'Other facilities', type:'choice', options:YN, detail:{when:'Yes', type:'multi', options:['Spa','Sauna/steambath','Pedicure','Other'], other:'Other'}},
     {id:'shuttle', label:'Shuttle', type:'choice', options:YN}]},
   {id:'location', name:'Location', fields:[
-    {id:'hotelArea', label:'Hotel area', type:'multi', options:['Airport','Downtown','Residential','Commercial/Business district','Suburban','Beach/Resort','Historic/Old town','Industrial/Business park','Rural','Other'], other:'Other', standard:"Artikel 2b — Een redelijke ligging t.o.v. vliegveld, winkels en recreatiemogelijkheden, in voldoende veilige omgeving en rekening houdend met unieke kenmerken van de bestemming. Uitgangspunt is te overnachten in of nabij het centrum van de stad; 'hotels in the middle of nowhere' worden voorkomen, tenzij lokale omstandigheden (bijv. veiligheid, ontbreken van één centraal centrum, onevenredig lange reistijd) een alternatieve locatie rechtvaardigen."},
+    {id:'hotelArea', label:'Hotel area', type:'multi', tagPicker:true, options:['Airport','Downtown','Residential','Commercial/Business district','Suburban','Beach/Resort','Historic/Old town','Industrial/Business park','Rural','Other'], other:'Other', standard:"Artikel 2b — Een redelijke ligging t.o.v. vliegveld, winkels en recreatiemogelijkheden, in voldoende veilige omgeving en rekening houdend met unieke kenmerken van de bestemming. Uitgangspunt is te overnachten in of nabij het centrum van de stad; 'hotels in the middle of nowhere' worden voorkomen, tenzij lokale omstandigheden (bijv. veiligheid, ontbreken van één centraal centrum, onevenredig lange reistijd) een alternatieve locatie rechtvaardigen."},
     {id:'cityCenter', label:'City center', type:'choice', options:YN, standard:"Artikel 2b: uitgangspunt is dat er wordt geslapen in de stad waar KLM op vliegt, bij voorkeur in of nabij het centrum. Op basis van redelijkheid en argumenten kan hiervan worden afgeweken."},
     {id:'driveTime', label:'Driving time to the airport', type:'text', ph:'bijv. 35 min', standard:"Onderdeel van de ligging-beoordeling (Artikel 2b): een redelijke ligging t.o.v. het vliegveld, rekening houdend met de lokale omstandigheden."},
     {id:'entertainment', label:'Distance to entertainment', type:'nearby', options:['Restaurants','Cinema','Shopping','Nightlife','Park','Supermarket'], modes:['Car','Subway','On foot']},
@@ -478,6 +481,14 @@ function chipsHTML(s){ return SECTIONS.map(sec=>{ const n=sec.fields.filter(f=>i
 function metaHTML(s,sec){ const n=sec.fields.filter(f=>isFlag(s,f)).length;
   return `${doneCount(s,sec.fields)}/${sec.fields.length}${n?` · <span class="fl">${n} bevinding${n>1?'en':''}</span>`:''}`; }
 
+function tagPickerHTML(s,f,k,arr){
+  arr=arr||[];
+  const remaining=f.options.filter(o=>!arr.includes(o));
+  return `<select class="inp" data-tagadd="${k}" aria-label="${esc(f.label)} toevoegen">
+    <option value="">Kies om toe te voegen…</option>
+    ${remaining.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('')}
+  </select>${arr.length?`<div class="tags">${arr.map(o=>`<span class="tag">${esc(o)}<button type="button" data-a="removetag" data-id="${k}" data-v="${esc(o)}" aria-label="Verwijderen">×</button></span>`).join('')}</div>`:''}`;
+}
 function optButtons(s,f,multi){
   const v=s.f[f.id];
   return `<div class="opts ${multi?'multi':''}" role="group" aria-label="${esc(f.label)}">${f.options.map(o=>{
@@ -524,20 +535,24 @@ function fieldHTML(s,f){
   }
   else if(f.type==='nearby'){
     const sel=s.f[`${k}.selected`]||[];
-    body = f.options.map(o=>{
-      const slug=nearbySlug(o), on=sel.includes(o), mk=`${k}.${slug}`;
-      return `<div class="nearby-item">
-        <button type="button" data-a="togglenearby" data-id="${k}" data-v="${esc(o)}" aria-pressed="${on}">${esc(o)}</button>
-        ${on?`<div class="grid2 sub">
-          <label class="f" style="margin-top:0">Minuten<input class="inp" type="number" inputmode="numeric" min="0" data-k="${mk}.minutes" value="${esc(s.f[mk+'.minutes'])}"></label>
-          <label class="f" style="margin-top:0">Vervoer<select class="inp" data-k="${mk}.mode">
-            <option value="" ${!s.f[mk+'.mode']?'selected':''}>–</option>
-            ${f.modes.map(m=>`<option value="${m}" ${s.f[mk+'.mode']===m?'selected':''}>${m}</option>`).join('')}
-          </select></label>
-        </div>`:''}
-      </div>`;
-    }).join('');
+    const remaining=f.options.filter(o=>!sel.includes(o));
+    body = `<select class="inp" data-tagadd="${k}.selected" aria-label="${esc(f.label)} toevoegen">
+        <option value="">Kies om toe te voegen…</option>
+        ${remaining.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('')}
+      </select>` +
+      sel.map(o=>{ const slug=nearbySlug(o), mk=`${k}.${slug}`;
+        return `<div class="nearby-item">
+          <div class="field-label"><span>${esc(o)}</span><button type="button" class="link" data-a="removetag" data-id="${k}.selected" data-v="${esc(o)}">Verwijderen</button></div>
+          <div class="grid2 sub">
+            <label class="f" style="margin-top:0">Minuten<input class="inp" type="number" inputmode="numeric" min="0" data-k="${mk}.minutes" value="${esc(s.f[mk+'.minutes'])}"></label>
+            <label class="f" style="margin-top:0">Vervoer<select class="inp" data-k="${mk}.mode">
+              <option value="" ${!s.f[mk+'.mode']?'selected':''}>–</option>
+              ${f.modes.map(m=>`<option value="${m}" ${s.f[mk+'.mode']===m?'selected':''}>${m}</option>`).join('')}
+            </select></label>
+          </div>
+        </div>`; }).join('');
   }
+  else if(f.type==='multi' && f.tagPicker) body=tagPickerHTML(s,f,k,v);
   else body=optButtons(s,f,f.type==='multi');
   const showOther = f.other && (Array.isArray(v)?v.includes(f.other):v===f.other);
   const showDetail = f.detail && v===f.detail.when;
@@ -1139,7 +1154,7 @@ document.addEventListener('click', async e=>{
   else if(a==='airqualityauto'){ s.airQualityAuto=true; rerenderField(s,'airQualityIndex'); scheduleAirQualityLookup(s); }
   else if(a==='retryairquality'){ s.airQualityAuto=true; s.airQualityError=null; touch(s); rerenderField(s,'airQualityIndex'); tryFetchAirQuality(s); }
   else if(a==='toggle'){ const id=b.dataset.id, v=b.dataset.v; const arr=s.f[id]||[]; s.f[id]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
-  else if(a==='togglenearby'){ const id=b.dataset.id, v=b.dataset.v, selKey=`${id}.selected`; const arr=s.f[selKey]||[]; s.f[selKey]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
+  else if(a==='removetag'){ const id=b.dataset.id, v=b.dataset.v; s.f[id]=(s.f[id]||[]).filter(x=>x!==v); touch(s); rerenderField(s,id.split('.')[0]); refreshStats(); }
   else if(a==='pickdetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; s.f[dk] = s.f[dk]===v?undefined:v; if(s.f[dk]===undefined) delete s.f[dk]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='toggledetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; const arr=s.f[dk]||[]; s.f[dk]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='meal'){ const k=`${b.dataset.id}.${b.dataset.i}.meals`, v=b.dataset.v; const arr=s.f[k]||[]; s.f[k]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); b.setAttribute('aria-pressed',s.f[k].includes(v)); }
@@ -1213,6 +1228,7 @@ document.addEventListener('input', e=>{
       box.innerHTML=matches.map(m=>`<button type="button" data-a="pickta" data-id="${d.k}" data-v="${esc(m)}">${esc(m)}</button>`).join('');
       box.hidden=!matches.length; }
     if(doneCount(s)!==was) refreshStats(); }
+  else if(d.tagadd){ const val=el.value; if(val){ const arr=s.f[d.tagadd]||[]; if(!arr.includes(val)) s.f[d.tagadd]=[...arr,val]; touch(s); rerenderField(s,d.tagadd.split('.')[0]); refreshStats(); } }
   else if(d.note){ s.notes[d.note]=el.value; touch(s); }
   else if(d.photolabel){ const p=s.photos.find(x=>x.id===d.photolabel); if(p){ p.label=el.value; touch(s); } }
   else if(d.datepart){ const [y,m,dd]=(s.date||today()).split('-'); const parts={y,m,d:dd}; parts[d.datepart]=el.value; s.date=`${parts.y}-${parts.m}-${parts.d}`; touch(s); }
@@ -1366,7 +1382,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.23.0';
+const APP_VERSION='1.24.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
