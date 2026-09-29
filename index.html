@@ -218,7 +218,8 @@ const ICON={
   mark:'<svg width="34" height="24" viewBox="0 0 212 152" aria-hidden="true"><rect x="0" y="0" width="212" height="152" rx="40" fill="#0EA5E9"/><rect x="14" y="14" width="184" height="124" rx="28" fill="none" stroke="#fff" stroke-width="6" stroke-dasharray="10 9"/><rect x="66" y="26" width="80" height="100" rx="22" fill="#fff"/><path d="M83 76 L101 94 L131 56" fill="none" stroke="#0EA5E9" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   book:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>',
   collapse:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11l5-5 5 5"/><path d="M7 18l5-5 5 5"/></svg>',
-  share:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg>'
+  share:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg>',
+  image:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>'
 };
 const AIRLINES=['Aegean Airlines','Aer Lingus','Aeroflot','Aeromexico','Air Algerie','Air Astana','Air Baltic','Air Canada','Air China','Air Europa','Air France','Air India','Air New Zealand','Air Serbia','Air Transat','Alaska Airlines','Alitalia (ITA Airways)','All Nippon Airways (ANA)','American Airlines','Asiana Airlines','Austrian Airlines','Avianca','Azerbaijan Airlines','Bangkok Airways','Batik Air','British Airways','Brussels Airlines','Bulgaria Air','Cathay Pacific','Cebu Pacific','China Airlines','China Eastern Airlines','China Southern Airlines','Condor','Copa Airlines','Croatia Airlines','Delta Air Lines','EgyptAir','EL AL','Emirates','Ethiopian Airlines','Etihad Airways','Eurowings','EVA Air','Finnair','flydubai','Garuda Indonesia','Gulf Air','Hainan Airlines','Hawaiian Airlines','Hong Kong Airlines','Iberia','Icelandair','IndiGo','Japan Airlines (JAL)','Jet2','JetBlue','Jetstar Airways','Juneyao Airlines','Kenya Airways','KLM Royal Dutch Airlines','Korean Air','Kuwait Airways','LATAM Airlines','LOT Polish Airlines','Lufthansa','Luxair','Malaysia Airlines','Malta Air','Middle East Airlines','Norwegian Air','Oman Air','Pakistan International Airlines','Pegasus Airlines','Philippine Airlines','Qantas','Qatar Airways','Royal Air Maroc','Royal Brunei Airlines','Royal Jordanian','RwandAir','Ryanair','SAS Scandinavian Airlines','Saudia','Scoot','Shenzhen Airlines','Singapore Airlines','South African Airways','Southwest Airlines','SpiceJet','Spirit Airlines','SriLankan Airlines','Sun Country Airlines','Swiss International Air Lines','TAAG Angola Airlines','TAP Air Portugal','Thai Airways','Transavia','Tunisair','Turkish Airlines','Ukraine International Airlines','United Airlines','Uzbekistan Airways','Vietnam Airlines','Virgin Atlantic','Virgin Australia','Vistara','Vueling','WestJet','Wizz Air','Xiamen Airlines'];
 const SECTIONS = [
@@ -460,7 +461,7 @@ function renderHome(){
 
 function renderEdit(){
   const s=cur(); if(!s){view={name:'home'};return render();}
-  setBar(`<button class="icon-btn" data-a="home" aria-label="Terug">←</button><h1>${esc(title(s))}</h1><button class="icon-btn" data-a="sharesurvey" aria-label="Survey delen">${ICON.share}</button><button class="icon-btn" data-a="delete" aria-label="Survey verwijderen">${ICON.trash}</button>`);
+  setBar(`<button class="icon-btn" data-a="home" aria-label="Terug">←</button><h1>${esc(title(s))}</h1><button class="icon-btn" data-a="sharesurvey" aria-label="Survey delen">${ICON.share}</button><button class="icon-btn" data-a="savephotos" aria-label="Foto's bewaren in fotobibliotheek">${ICON.image}</button><button class="icon-btn" data-a="delete" aria-label="Survey verwijderen">${ICON.trash}</button>`);
   const v=verdict(s);
   $('#app').innerHTML = `
     <section class="panel">
@@ -487,7 +488,7 @@ function renderEdit(){
       <p class="hint">Maak of kies een foto en geef 'm een label, bijv. Breakfast, Gym of Room 512.</p>
       <div class="photos" data-photos>${photosHTML(s)}</div>
       <label class="add-photo">📷 Foto toevoegen<input type="file" accept="image/*" multiple data-photo="1"></label>
-      ${s.photos.length?`<button type="button" class="btn wide" style="margin-top:10px" data-a="savephotos">Bewaar foto's in fotobibliotheek</button>`:''}
+      <button type="button" class="btn wide" style="margin-top:10px" data-a="savephotos" data-photos-save-btn ${s.photos.length?'':'hidden'}>Bewaar foto's in fotobibliotheek</button>
     </section>
     ${SECTIONS.map(sec=>`
     <section class="panel" id="sec-${sec.id}">
@@ -668,6 +669,10 @@ function photosHTML(s){
     <input class="photo-label" data-photolabel="${p.id}" value="${esc(p.label)}" placeholder="Label, bijv. Breakfast">
   </div>`).join('');
 }
+function refreshPhotosUI(s){
+  const box=document.querySelector('[data-photos]'); if(box) box.innerHTML=photosHTML(s);
+  const btn=document.querySelector('[data-photos-save-btn]'); if(btn) btn.hidden=!s.photos.length;
+}
 function dataUrlToFile(dataUrl,filename){
   const [meta,b64]=dataUrl.split(','); const mime=/data:(.*?);/.exec(meta)[1];
   const bin=atob(b64); const arr=new Uint8Array(bin.length);
@@ -675,10 +680,14 @@ function dataUrlToFile(dataUrl,filename){
   return new File([arr],filename,{type:mime});
 }
 async function savePhotosToLibrary(s,photos){
-  photos=photos||s.photos;
-  const files=photos.map((p,i)=>dataUrlToFile(p.data,`${(p.label||'foto').replace(/[^a-z0-9]+/gi,'-')||'foto-'+(i+1)}.jpg`));
+  const all=photos||s.photos;
+  if(!all.length){ toast('Nog geen foto\'s om te bewaren.'); return; }
+  const list=all.filter(p=>!p.savedToLibrary);
+  if(!list.length){ toast('Deze foto\'s zijn al bewaard in de fotobibliotheek.'); return; }
+  const files=list.map((p,i)=>dataUrlToFile(p.data,`${(p.label||'foto').replace(/[^a-z0-9]+/gi,'-')||'foto-'+(i+1)}.jpg`));
   if(navigator.canShare?.({files})){
-    try{ await navigator.share({files}); }catch(e){ if(e.name!=='AbortError') toast('Bewaren is niet gelukt.'); }
+    try{ await navigator.share({files}); list.forEach(p=>p.savedToLibrary=true); touch(s); }
+    catch(e){ if(e.name!=='AbortError') toast('Bewaren is niet gelukt.'); }
     return;
   }
   toast('Delen van foto\'s wordt hier niet ondersteund.');
@@ -1246,7 +1255,7 @@ document.addEventListener('click', async e=>{
     const hInput=document.querySelector('[data-top="hotel"]'); if(hInput) hInput.value=name;
     const aInput=document.querySelector('[data-top="address"]'); if(aInput) aInput.value=s.address;
     scheduleDriveTimeLookup(s); scheduleAirQualityLookup(s); }
-  else if(a==='delphoto'){ s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); b.closest('.photo').remove(); }
+  else if(a==='delphoto'){ s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); refreshPhotosUI(s); }
   else if(a==='savephotos'){ savePhotosToLibrary(s); }
   else if(a==='addgroup'){ S.groups.push({id:uid(),name:'',to:'',cc:''}); persist(); render(); }
   else if(a==='delgroup'){ S.groups=S.groups.filter(g=>g.id!==b.dataset.gid); persist(); render(); }
@@ -1321,7 +1330,7 @@ document.addEventListener('change', async e=>{
     const added=[];
     for(const file of el.files){ try{ const p=await compress(file); const ph={id:uid(),label:defLabel,...p}; s.photos.push(ph); added.push(ph); }catch(err){ toast('Foto kon niet worden gelezen. Probeer een JPG of PNG.'); } }
     el.value=''; touch(s);
-    document.querySelector('[data-photos]').innerHTML=photosHTML(s);
+    refreshPhotosUI(s);
     if(S.autoSavePhotos && added.length) savePhotosToLibrary(s,added);
   }
 });
@@ -1441,7 +1450,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.29.0';
+const APP_VERSION='1.30.1';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
