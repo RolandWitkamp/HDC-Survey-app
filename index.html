@@ -316,7 +316,12 @@ let shareBusy=false;
 function shareGuard(payload){
   if(shareBusy){ toast('Er loopt al een deel-actie, wacht heel even en probeer opnieuw.'); const e=new Error('busy'); e.name='AbortError'; return Promise.reject(e); }
   shareBusy=true;
-  return navigator.share(payload).finally(()=>{ shareBusy=false; });
+  let done=false;
+  const clear=()=>{ done=true; shareBusy=false; };
+  return Promise.race([
+    navigator.share(payload).then(v=>{ clear(); return v; }, e=>{ clear(); throw e; }),
+    new Promise((_,rej)=>setTimeout(()=>{ if(!done){ clear(); const e=new Error('Het deelvenster reageerde niet.'); e.name='TimeoutError'; rej(e); } },8000))
+  ]);
 }
 const store = {
   db:null, mem:{}, opening:null,
@@ -1460,7 +1465,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.32.0';
+const APP_VERSION='1.32.1';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
