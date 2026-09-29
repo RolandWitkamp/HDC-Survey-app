@@ -894,8 +894,9 @@ function renderSettings(){
         <span style="color:var(--ink)">Automatisch luchtkwaliteit ophalen via internet</span>
       </label>
       <p class="hint" style="margin-top:8px">Haalt bij het invullen van het adres de gemeten luchtkwaliteit (AQI) op via het gratis platform WAQI/aqicn.org.</p>
+      ${advancedUnlocked?`
       <label class="f">WAQI-token (gratis)<input type="password" data-set="waqiToken" value="${esc(S.waqiToken)}" autocomplete="off" placeholder="Plak hier je token"></label>
-      <p class="hint" style="margin-top:8px">Gratis token aanvragen: ga naar <b>aqicn.org/data-platform/token/</b>, vul je e-mailadres in, en je ontvangt direct een token per mail. Geen creditcard of facturering nodig. Plak de token hierboven.</p>
+      <p class="hint" style="margin-top:8px">Gratis token aanvragen: ga naar <b>aqicn.org/data-platform/token/</b>, vul je e-mailadres in, en je ontvangt direct een token per mail. Geen creditcard of facturering nodig. Plak de token hierboven.</p>`:''}
     </section>
     <section class="panel"><h2>Vaste ontvangers</h2>
       <p class="hint">Maak groepen, bijvoorbeeld per station of afdeling. Meerdere adressen scheid je met een komma.</p>
@@ -1327,7 +1328,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.20.0';
+const APP_VERSION='1.20.1';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
