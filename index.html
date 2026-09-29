@@ -687,10 +687,10 @@ async function savePhotosToLibrary(s,photos){
   const files=list.map((p,i)=>dataUrlToFile(p.data,`${(p.label||'foto').replace(/[^a-z0-9]+/gi,'-')||'foto-'+(i+1)}.jpg`));
   if(navigator.canShare?.({files})){
     try{ await navigator.share({files}); list.forEach(p=>p.savedToLibrary=true); touch(s); }
-    catch(e){ if(e.name!=='AbortError') toast('Bewaren is niet gelukt.'); }
+    catch(e){ if(e.name!=='AbortError') toast(`Bewaren is niet gelukt (${e.name||'fout'}: ${e.message||e}).`); }
     return;
   }
-  toast('Delen van foto\'s wordt hier niet ondersteund.');
+  toast('Delen van foto\'s wordt hier niet ondersteund (canShare gaf nee).');
 }
 
 /* ---------- Driving time to airport (best-effort, via OpenStreetMap/OSRM) ---------- */
@@ -1329,7 +1329,7 @@ document.addEventListener('change', async e=>{
     const defLabel=el.dataset.photoLabel||'';
     const rawFiles=[...el.files];
     const shareP=(S.autoSavePhotos && navigator.canShare?.({files:rawFiles}))
-      ? navigator.share({files:rawFiles}).then(()=>true).catch(e=>{ if(e.name!=='AbortError') toast('Bewaren is niet gelukt.'); return false; })
+      ? navigator.share({files:rawFiles}).then(()=>true).catch(e=>{ if(e.name!=='AbortError') toast(`Bewaren is niet gelukt (${e.name||'fout'}: ${e.message||e}).`); return false; })
       : Promise.resolve(false);
     const added=[];
     for(const file of el.files){ try{ const p=await compress(file); const ph={id:uid(),label:defLabel,...p}; s.photos.push(ph); added.push(ph); }catch(err){ toast('Foto kon niet worden gelezen. Probeer een JPG of PNG.'); } }
@@ -1454,7 +1454,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.31.1';
+const APP_VERSION='1.31.2';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
