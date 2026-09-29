@@ -312,6 +312,12 @@ function seedMealDefaults(f){ const out={}; f.meals.forEach((_,mi)=>{ const d=ME
 const TIME_SLOTS = Array.from({length:48},(_,i)=>`${String(Math.floor(i/2)).padStart(2,'0')}:${i%2?'30':'00'}`);
 
 /* ---------- Storage (IndexedDB, falls back to memory) ---------- */
+let shareBusy=false;
+function shareGuard(payload){
+  if(shareBusy){ toast('Er loopt al een deel-actie, wacht heel even en probeer opnieuw.'); const e=new Error('busy'); e.name='AbortError'; return Promise.reject(e); }
+  shareBusy=true;
+  return navigator.share(payload).finally(()=>{ shareBusy=false; });
+}
 const store = {
   db:null, mem:{}, opening:null,
   open(){
@@ -686,7 +692,7 @@ async function savePhotosToLibrary(s,photos){
   if(!list.length){ toast('Deze foto\'s zijn al bewaard in de fotobibliotheek.'); return; }
   const files=list.map((p,i)=>dataUrlToFile(p.data,`${(p.label||'foto').replace(/[^a-z0-9]+/gi,'-')||'foto-'+(i+1)}.jpg`));
   if(navigator.canShare?.({files})){
-    try{ await navigator.share({files}); list.forEach(p=>p.savedToLibrary=true); touch(s); }
+    try{ await shareGuard({files}); list.forEach(p=>p.savedToLibrary=true); touch(s); }
     catch(e){ if(e.name!=='AbortError') toast(`Bewaren is niet gelukt (${e.name||'fout'}: ${e.message||e}).`); }
     return;
   }
@@ -1329,7 +1335,7 @@ document.addEventListener('change', async e=>{
     const defLabel=el.dataset.photoLabel||'';
     const rawFiles=[...el.files];
     const shareP=(S.autoSavePhotos && navigator.canShare?.({files:rawFiles}))
-      ? navigator.share({files:rawFiles}).then(()=>true).catch(e=>{ if(e.name!=='AbortError') toast(`Bewaren is niet gelukt (${e.name||'fout'}: ${e.message||e}).`); return false; })
+      ? shareGuard({files:rawFiles}).then(()=>true).catch(e=>{ if(e.name!=='AbortError') toast(`Bewaren is niet gelukt (${e.name||'fout'}: ${e.message||e}).`); return false; })
       : Promise.resolve(false);
     const added=[];
     for(const file of el.files){ try{ const p=await compress(file); const ph={id:uid(),label:defLabel,...p}; s.photos.push(ph); added.push(ph); }catch(err){ toast('Foto kon niet worden gelezen. Probeer een JPG of PNG.'); } }
@@ -1449,12 +1455,12 @@ async function sharePdf(s){
   const {to,cc}=recipients(s);
   if(to.length){ try{ await navigator.clipboard.writeText([...to,...cc].join(', ')); }catch(e){} }
   if(navigator.canShare && navigator.canShare({files:[file]})){
-    try{ await navigator.share({files:[file],title:subject(s),text:mailBody(s)});
+    try{ await shareGuard({files:[file],title:subject(s),text:mailBody(s)});
       s.status='verzonden'; touch(s); renderReport(); toast(to.length?'Gedeeld. Ontvangers staan op je klembord.':'Gedeeld.');
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.31.2';
+const APP_VERSION='1.32.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
@@ -1462,7 +1468,7 @@ async function savePdf(s){
   const file=new File([blob],pdfName(s),{type:'application/pdf'});
   if(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)){
     // iOS: bewaren via het deelmenu (Bewaar in Bestanden) is betrouwbaarder dan een download
-    if(navigator.canShare?.({files:[file]})){ try{ await navigator.share({files:[file]}); }catch(e){} return; }
+    if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); }catch(e){} return; }
   }
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=pdfName(s); document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
@@ -1500,7 +1506,7 @@ async function saveWord(s){
   if(downloads){ try{ await downloads.save({filename:wordName(s),data:blob}); toast('Word-bestand opgeslagen'); }catch(e){ if(e?.code!=='declined') toast('Opslaan lukt hier niet. Gebruik Delen.'); } return; }
   const file=new File([blob],wordName(s),{type:'application/msword'});
   if(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)){
-    if(navigator.canShare?.({files:[file]})){ try{ await navigator.share({files:[file]}); }catch(e){} return; }
+    if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); }catch(e){} return; }
   }
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=wordName(s); document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
@@ -1509,14 +1515,14 @@ async function exportSurvey(s){
   const data=JSON.stringify({surveys:[s],groups:[]},null,1);
   if(downloads){ try{ await downloads.save({filename:name,data}); toast('Survey opgeslagen'); }catch(e){ if(e?.code!=='declined') toast('Opslaan lukt hier niet.'); } return; }
   const file=new File([data],name,{type:'application/json'});
-  if(navigator.canShare?.({files:[file]})){ try{ await navigator.share({files:[file],title:name}); return; }catch(e){ if(e.name==='AbortError') return; } }
+  if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file],title:name}); return; }catch(e){ if(e.name==='AbortError') return; } }
   const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=file.name; document.body.appendChild(a); a.click(); a.remove();
 }
 async function exportAll(){
   const data=JSON.stringify({surveys:S.surveys,groups:S.groups,defaultRep:S.defaultRep},null,1);
   if(downloads){ try{ await downloads.save({filename:`hotel-surveys-${today()}.json`,data}); toast('Export opgeslagen'); }catch(e){ if(e?.code!=='declined') toast('Exporteren lukt hier niet.'); } return; }
   const file=new File([data],`hotel-surveys-${today()}.json`,{type:'application/json'});
-  if(navigator.canShare?.({files:[file]})){ try{ await navigator.share({files:[file]}); return; }catch(e){ if(e.name==='AbortError') return; } }
+  if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); return; }catch(e){ if(e.name==='AbortError') return; } }
   const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=file.name; document.body.appendChild(a); a.click(); a.remove();
 }
 
