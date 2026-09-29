@@ -33,7 +33,7 @@
   --accent:#38BDF8; --accent-ink:#0B2340; --soft:#1E2E42;
 }
 *,*::before,*::after{box-sizing:border-box}
-html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 64px)}
+html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 112px)}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-text-size-adjust:100%}
 button,input,textarea,select{font:inherit;color:inherit}
 button{cursor:pointer}
@@ -176,16 +176,14 @@ textarea{resize:vertical;min-height:72px}
 .fnote-head{display:flex;justify-content:flex-end}
 .fnote-head .link{font-size:.85rem;padding:2px 0}
 .fn-row{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-top:8px}
-.fn-score{flex:1;min-width:160px}
-.fn-lbl{display:block;font-size:.85rem;color:var(--muted);margin-bottom:2px}
-.fn-lbl b{color:var(--ink)}
-.fn-score input[type=range]{width:100%;accent-color:var(--accent)}
 .fn-comp{flex:none}
 .ta-wrap{position:relative}
 .ta-list{position:absolute;left:0;right:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--line);border-radius:10px;max-height:220px;overflow-y:auto;z-index:6;box-shadow:0 6px 18px rgba(0,0,0,.15)}
 .ta-list button{display:block;width:100%;text-align:left;border:0;background:none;border-top:1px solid var(--line);padding:10px 12px;font-weight:400}
 .ta-list button:first-child{border-top:0}
 .rest{display:grid;grid-template-columns:1fr;gap:6px;padding:8px 0}
+.nearby-item{margin-top:10px}
+.nearby-item:first-child{margin-top:0}
 .chips-wrap{position:sticky;top:calc(env(safe-area-inset-top,0px) + 64px);z-index:9;background:var(--bg);margin:0 -16px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center}
 .chips-wrap .chips{flex:1;min-width:0}
 .chips-collapse{flex:none;margin-right:8px;color:var(--muted)}
@@ -230,45 +228,28 @@ const SECTIONS = [
     {id:'guests', label:'Guests', type:'slider', min:0, max:100, step:5, left:'Business', right:'Leisure'},
     {id:'occupancyRate', label:'Occupancy rate', type:'select', options:Array.from({length:21},(_,i)=>`${i*5}%`)},
     {id:'management', label:'Management', type:'text'},
-    {id:'airlineExp', label:'Airline experience', type:'choice', options:YN, detail:{when:'Yes', type:'search'}}]},
+    {id:'airlineExp', label:'Airline experience', type:'choice', options:YN, detail:{when:'Yes', type:'search'}},
+    {id:'crewCheckin', label:'Separate check-in for crew', type:'choice', options:YN}]},
   {id:'facilities', name:'Facilities', fields:[
     {id:'mealHours', label:'Meal times', type:'mealtimes', meals:['Breakfast','Lunch','Dinner'], days:['Mo-Fri','Sa-Su'], standard:"Artikel 2c: dinertijden — voor crews die met de vroege vlucht vertrekken moet de avond voorafgaand tussen 17.00-19.00 uur LT gedineerd kunnen worden. Ontbijttijden Europa: het hotel regelt een ontbijt voor de vroegst vertrekkende crew. Oostelijk gelegen stations (tijdsverschil ≥5 uur): ontbijt tot 15:00 lokale tijd op rekening van KLM."},
     {id:'breakfastType', label:'Breakfast type', type:'choice', options:['Buffet','A la carte','Other'], other:'Other', standard:"Artikel 3a — norm ontbijt: vruchtensap, 2 eieren met ham, brood, boter en thee of koffie."},
+    {id:'lunchType', label:'Lunch type', type:'choice', options:['Buffet','A la carte','Other'], other:'Other'},
+    {id:'dinnerType', label:'Dinner type', type:'choice', options:['Buffet','A la carte','Other'], other:'Other'},
     {id:'extBreakfast', label:'Extended breakfast', type:'choice', options:YN},
     {id:'roomService', label:'Room service', type:'choice', options:['24 hrs','Limited hours','No room service'], detail:{when:'Limited hours', label:'Hours'}},
     {id:'trayCharge', label:'Room service tray charge', type:'choice', options:YN},
-    {id:'restaurants', label:'Restaurants', type:'restaurants', rows:3, meals:['Lunch','Dinner','All-day']},
-    {id:'bar', label:'Bar', type:'text'},
+    {id:'restaurants', label:'Restaurants', type:'restaurants', rows:3, meals:['Breakfast','Lunch','Dinner','All-day']},
+    {id:'bar', label:'Bar', type:'choice', options:YN, hours:{when:'Yes'}},
     {id:'pool', label:'Pool', type:'choice', options:YN, detail:{when:'Yes', type:'choice', options:['Indoor','Outdoor','Both']}, hours:{when:'Yes'}, standard:"Een zwembad wordt gedefinieerd als een bad bedoeld om in te zwemmen; dus geen jacuzzi of bubbelbad. Heeft het hotel alleen een buitenzwembad dat 's winters niet geopend is (of geen zwembad/fitness, ook niet publiek toegankelijk), dan wordt hiervoor pro rato een vergoeding aan het daggeld toegevoegd."},
     {id:'gym', label:'Gym', type:'choice', options:YN, hours:{when:'Yes'}, standard:"Artikel 2e — Sportfaciliteiten dienen in het hotel aanwezig te zijn, van deugdelijke kwaliteit en in voldoende mate. Een fitnessruimte is voldoende uitgerust als er cardiomachines én minstens één fitnessapparaat en/of carrousel met gewichten aanwezig zijn."},
-    {id:'otherFacilities', label:'Other facilities', type:'choice', options:YN, detail:{when:'Yes', type:'multi', options:['Spa','Sauna/steambath','Other'], other:'Other'}},
+    {id:'otherFacilities', label:'Other facilities', type:'choice', options:YN, detail:{when:'Yes', type:'multi', options:['Spa','Sauna/steambath','Pedicure','Other'], other:'Other'}},
     {id:'shuttle', label:'Shuttle', type:'choice', options:YN}]},
   {id:'location', name:'Location', fields:[
-    {id:'hotelArea', label:'Hotel area', type:'select', options:['Airport','Residential','Commercial/Business district','Suburban','Beach/Resort','Historic/Old town','Industrial/Business park','Rural','Other'], other:'Other', standard:"Artikel 2b — Een redelijke ligging t.o.v. vliegveld, winkels en recreatiemogelijkheden, in voldoende veilige omgeving en rekening houdend met unieke kenmerken van de bestemming. Uitgangspunt is te overnachten in of nabij het centrum van de stad; 'hotels in the middle of nowhere' worden voorkomen, tenzij lokale omstandigheden (bijv. veiligheid, ontbreken van één centraal centrum, onevenredig lange reistijd) een alternatieve locatie rechtvaardigen."},
+    {id:'hotelArea', label:'Hotel area', type:'multi', options:['Airport','Downtown','Residential','Commercial/Business district','Suburban','Beach/Resort','Historic/Old town','Industrial/Business park','Rural','Other'], other:'Other', standard:"Artikel 2b — Een redelijke ligging t.o.v. vliegveld, winkels en recreatiemogelijkheden, in voldoende veilige omgeving en rekening houdend met unieke kenmerken van de bestemming. Uitgangspunt is te overnachten in of nabij het centrum van de stad; 'hotels in the middle of nowhere' worden voorkomen, tenzij lokale omstandigheden (bijv. veiligheid, ontbreken van één centraal centrum, onevenredig lange reistijd) een alternatieve locatie rechtvaardigen."},
     {id:'cityCenter', label:'City center', type:'choice', options:YN, standard:"Artikel 2b: uitgangspunt is dat er wordt geslapen in de stad waar KLM op vliegt, bij voorkeur in of nabij het centrum. Op basis van redelijkheid en argumenten kan hiervan worden afgeweken."},
     {id:'driveTime', label:'Driving time to the airport', type:'text', ph:'bijv. 35 min', standard:"Onderdeel van de ligging-beoordeling (Artikel 2b): een redelijke ligging t.o.v. het vliegveld, rekening houdend met de lokale omstandigheden."},
-    {id:'entertainment', label:'Distance to entertainment', type:'text'},
+    {id:'entertainment', label:'Distance to entertainment', type:'nearby', options:['Restaurants','Cinema','Shopping','Nightlife','Park','Supermarket'], modes:['Car','Subway','On foot']},
     {id:'publicTransport', label:'Public transport', type:'multi', options:['Subway','Bus/tram'], extra:'Cost 1-way taxi'}]},
-  {id:'security', name:'Safety and security', fields:[
-    {id:'sprinklersPublic', label:'Sprinklers/smoke detectors public areas', type:'choice', options:YN, flag:['No'], standard:"Smokedetectors en/of sprinklers dienen óf op kamerniveau óf in de gang waaraan de kamers grenzen aanwezig te zijn."},
-    {id:'emergencyExits', label:'Number of emergency exits per floor', type:'text', mode:'numeric'},
-    {id:'exitsMarked', label:'Exits clearly marked', type:'choice', options:YN, flag:['No'], standard:"De nooduitgangen en evacuatieroute dienen duidelijk aangegeven te zijn en voorzien te zijn van noodverlichting; de uitgangen en de route dienen vrij van obstakels te zijn."},
-    {id:'exitObstacleFree', label:'Exit route obstacle free', type:'choice', options:YN, flag:['No'], standard:"De nooduitgangen en evacuatieroute dienen duidelijk aangegeven te zijn en voorzien te zijn van noodverlichting; de uitgangen en de route dienen vrij van obstakels te zijn."},
-    {id:'exitDirectlyOutside', label:'Emergency exit directly outside', type:'choice', options:YN},
-    {id:'extinguisher', label:'Extinguisher/hose', type:'choice', options:YN, flag:['No']},
-    {id:'cctv', label:'CCTV', type:'choice', options:YN, flag:['No']},
-    {id:'elevatorKeycard', label:'Elevator keycard guarded', type:'choice', options:YN, flag:['No']},
-    {id:'fireRules', label:'Fire safety and security rules and regulations', type:'choice', options:CMP, flag:['Not compliant'], standard:"De geldende Europese wet- en regelgeving, 86/666/EEC, aangaande brandveiligheid dient aangehouden te worden. Maken lokale omstandigheden dit onmogelijk, dan treedt overleg met de SCO in werking om mitigerende maatregelen te treffen."},
-    {id:'fireDrills', label:'Fire drills', type:'select', options:Array.from({length:11},(_,i)=>String(i))},
-    {id:'airQuality', label:'Air Quality Protocol', type:'choice', options:YN},
-    {id:'airQualityIndex', label:'Air Quality Index (measured)', type:'text', ph:'Wordt automatisch opgehaald'},
-    {id:'sustainability', label:'Sustainability program', type:'choice', options:YN}]},
-  {id:'roomSafety', name:'Room safety', fields:[
-    {id:'sprinklersRoom', label:'Sprinklers/smoke detectors', type:'choice', options:YN, flag:['No'], standard:"Smokedetectors en/of sprinklers dienen óf op kamerniveau óf in de gang waaraan de kamers grenzen aanwezig te zijn."},
-    {id:'peephole', label:'Peep hole', type:'choice', options:YN, flag:['No'], standard:"De deur van een kamer in een hotel dient ofwel een peephole óf een ketting/looplock te hebben."},
-    {id:'escapePlan', label:'Escape plan', type:'choice', options:YN, flag:['No'], standard:"Evacuatieplan dient in kamers op of nabij de kamerdeur te hangen."},
-    {id:'extraLock', label:'Extra lock', type:'choice', options:YN, flag:['No']},
-    {id:'safe', label:'Safety deposit box', type:'choice', options:YN, flag:['No']}]},
   {id:'rooms', name:'Rooms general', fields:[
     {id:'roomClass', label:'Room classification', type:'text', standard:"Artikel 2d — Een kwaliteitsniveau dat overeenkomt met dat van de bekende internationale hotelketens."},
     {id:'roomNumbers', label:'Room numbers checked', type:'text', ph:'bijv. 1204, 1512'},
@@ -285,6 +266,26 @@ const SECTIONS = [
     {id:'ironing', label:'Ironing facilities', type:'choice', options:YN},
     {id:'waterPotable', label:'Water potable', type:'choice', options:YN},
     {id:'compWater', label:'Complimentary water', type:'choice', options:YN}]},
+  {id:'roomSafety', name:'Room safety', fields:[
+    {id:'sprinklersRoom', label:'Sprinklers/smoke detectors', type:'choice', options:YN, flag:['No'], standard:"Smokedetectors en/of sprinklers dienen óf op kamerniveau óf in de gang waaraan de kamers grenzen aanwezig te zijn."},
+    {id:'peephole', label:'Peep hole', type:'choice', options:YN, flag:['No'], standard:"De deur van een kamer in een hotel dient ofwel een peephole óf een ketting/looplock te hebben."},
+    {id:'escapePlan', label:'Escape plan', type:'choice', options:YN, flag:['No'], standard:"Evacuatieplan dient in kamers op of nabij de kamerdeur te hangen."},
+    {id:'extraLock', label:'Extra lock', type:'choice', options:YN, flag:['No']},
+    {id:'safe', label:'Safety deposit box', type:'choice', options:YN, flag:['No']}]},
+  {id:'security', name:'Safety and security', fields:[
+    {id:'sprinklersPublic', label:'Sprinklers/smoke detectors public areas', type:'choice', options:YN, flag:['No'], standard:"Smokedetectors en/of sprinklers dienen óf op kamerniveau óf in de gang waaraan de kamers grenzen aanwezig te zijn."},
+    {id:'emergencyExits', label:'Number of emergency exits per floor', type:'text', mode:'numeric'},
+    {id:'exitsMarked', label:'Exits clearly marked', type:'choice', options:YN, flag:['No'], standard:"De nooduitgangen en evacuatieroute dienen duidelijk aangegeven te zijn en voorzien te zijn van noodverlichting; de uitgangen en de route dienen vrij van obstakels te zijn."},
+    {id:'exitObstacleFree', label:'Exit route obstacle free', type:'choice', options:YN, flag:['No'], standard:"De nooduitgangen en evacuatieroute dienen duidelijk aangegeven te zijn en voorzien te zijn van noodverlichting; de uitgangen en de route dienen vrij van obstakels te zijn."},
+    {id:'exitDirectlyOutside', label:'Emergency exit directly outside', type:'choice', options:YN},
+    {id:'extinguisher', label:'Extinguisher/hose', type:'choice', options:YN, flag:['No']},
+    {id:'cctv', label:'CCTV', type:'choice', options:YN, flag:['No']},
+    {id:'elevatorKeycard', label:'Elevator keycard guarded', type:'choice', options:YN, flag:['No']},
+    {id:'fireRules', label:'Fire safety and security rules and regulations', type:'choice', options:CMP, flag:['Not compliant'], standard:"De geldende Europese wet- en regelgeving, 86/666/EEC, aangaande brandveiligheid dient aangehouden te worden. Maken lokale omstandigheden dit onmogelijk, dan treedt overleg met de SCO in werking om mitigerende maatregelen te treffen."},
+    {id:'fireDrills', label:'Fire drills', type:'select', options:Array.from({length:11},(_,i)=>String(i))},
+    {id:'airQuality', label:'Air Quality Protocol', type:'choice', options:YN},
+    {id:'airQualityIndex', label:'Air Quality Index (measured)', type:'text', ph:'Wordt automatisch opgehaald'},
+    {id:'sustainability', label:'Sustainability program', type:'choice', options:YN}]},
   {id:'noise', name:'Noise', fields:[
     {id:'nRoomToRoom', label:'Room to room', type:'choice', options:CMP, flag:['Not compliant'], standard:"Voorziening tegen geluidshinder: het geluidsniveau dient getoetst te worden op geluid van 1) de gang, 2) omringende kamers, 3) werkzaamheden en 4) buiten. Kamers met connecting doors worden bij voorkeur uitgesloten; vroege en late crews worden zoveel mogelijk van elkaar gescheiden."},
     {id:'nHallway', label:'Hallway', type:'choice', options:CMP, flag:['Not compliant'], standard:"Hotels dienen geen kamers uit te geven in de nabijheid van liften, ijsmachines, verkoopautomaten, ontbijt-/dinerzalen of vergader- en entertainmentzalen. Bij voorkeur ook niet nabij linnenkamers en/of schoonmaakruimtes."},
@@ -349,8 +350,10 @@ function filled(s,f){
   if(f.type==='pair') return f.parts.some((_,i)=>nonEmpty(s.f[`${f.id}.${i}`]));
   if(f.type==='restaurants') return [...Array(f.rows)].some((_,i)=>nonEmpty(s.f[`${f.id}.${i}.name`]));
   if(f.type==='mealtimes') return f.meals.some((_,mi)=>f.days.some((_,di)=>nonEmpty(s.f[`${f.id}.${mi}.${di}.from`])||nonEmpty(s.f[`${f.id}.${mi}.${di}.to`])));
+  if(f.type==='nearby') return (s.f[`${f.id}.selected`]||[]).length>0;
   return nonEmpty(v) || (f.extra && nonEmpty(s.f[f.id+'.extra']));
 }
+const nearbySlug = o=>o.toLowerCase().replace(/[^a-z0-9]+/g,'');
 const isFlag = (s,f)=>(!!f.flag && f.flag.includes(s.f[f.id])) || (!!f.detail?.flag && s.f[f.id]===f.detail.when && f.detail.flag.includes(s.f[f.id+'.detail']));
 const flags = s=>ALL.filter(f=>isFlag(s,f));
 const doneCount = (s,fs=ALL)=>fs.filter(f=>filled(s,f)).length;
@@ -373,6 +376,10 @@ function valueText(s,f){
   if(f.type==='pair') return f.parts.map((p,i)=>nonEmpty(s.f[`${f.id}.${i}`])?`${p}: ${s.f[`${f.id}.${i}`]}`:'').filter(Boolean).join('  |  ');
   if(f.type==='restaurants') return [...Array(f.rows)].map((_,i)=>{ const n=s.f[`${f.id}.${i}.name`]; if(!nonEmpty(n)) return ''; const m=s.f[`${f.id}.${i}.meals`]||[]; return n+(m.length?` (${m.join(', ')})`:''); }).filter(Boolean).join('\n');
   if(f.type==='slider') return nonEmpty(v) ? sliderText(f,Number(v)) : '';
+  if(f.type==='nearby') return (s.f[`${f.id}.selected`]||[]).map(o=>{
+    const mk=`${f.id}.${nearbySlug(o)}`, min=s.f[mk+'.minutes'], mode=s.f[mk+'.mode'];
+    const extra=[nonEmpty(min)?`${min} min`:'',mode].filter(Boolean).join(', ');
+    return extra?`${o} (${extra})`:o; }).join(', ');
   if(f.type==='mealtimes') return f.meals.map((meal,mi)=>{
     const parts=f.days.map((day,di)=>{ const from=s.f[`${f.id}.${mi}.${di}.from`],to=s.f[`${f.id}.${mi}.${di}.to`];
       return (nonEmpty(from)||nonEmpty(to))?`${day} ${from||'?'}-${to||'?'}`:''; }).filter(Boolean).join(', ');
@@ -393,6 +400,11 @@ function valueText(s,f){
 /* ---------- Views ---------- */
 function setBar(html){ $('#bar').innerHTML=html+(view.name==='docs'?'':`<button class="icon-btn" data-a="docs" aria-label="Werkafspraken">${ICON.book}</button>`); }
 function setDock(html){ const d=$('#dock'); if(!html){d.hidden=true;return;} d.hidden=false; $('#dockIn').innerHTML=html; }
+function editDockHTML(s){
+  const remaining=TOTAL-doneCount(s);
+  return `<button class="btn primary" data-a="report" style="flex:1" ${remaining>0?'disabled':''}>${remaining>0?`Nog ${remaining} punt${remaining===1?'':'en'} invullen`:'Rapport en delen'}</button>
+    <label class="btn dock-photo-btn" aria-label="Foto toevoegen">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
+}
 function render(){ window.scrollTo(0,0);
   ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs})[view.name](); }
 
@@ -458,8 +470,7 @@ function renderEdit(){
         <button type="button" class="btn wide sec-collapse" data-a="closesec" data-id="${sec.id}">▴ ${esc(sec.name)} inklappen</button>
       </div>
     </section>`).join('')}`;
-  setDock(`<button class="btn primary" data-a="report" style="flex:1">Rapport en delen</button>
-    <label class="btn dock-photo-btn" aria-label="Foto toevoegen">+<input type="file" accept="image/*" multiple data-photo="1"></label>`);
+  setDock(editDockHTML(s));
   if(!s.f.driveTime) scheduleDriveTimeLookup(s);
 }
 function chipsHTML(s){ return SECTIONS.map(sec=>{ const n=sec.fields.filter(f=>isFlag(s,f)).length;
@@ -510,6 +521,22 @@ function fieldHTML(s,f){
       <option value="" ${!v?'selected':''}>Kies…</option>
       ${f.options.map(o=>`<option value="${esc(o)}" ${v===o?'selected':''}>${esc(o)}</option>`).join('')}
     </select>`;
+  }
+  else if(f.type==='nearby'){
+    const sel=s.f[`${k}.selected`]||[];
+    body = f.options.map(o=>{
+      const slug=nearbySlug(o), on=sel.includes(o), mk=`${k}.${slug}`;
+      return `<div class="nearby-item">
+        <button type="button" data-a="togglenearby" data-id="${k}" data-v="${esc(o)}" aria-pressed="${on}">${esc(o)}</button>
+        ${on?`<div class="grid2 sub">
+          <label class="f" style="margin-top:0">Minuten<input class="inp" type="number" inputmode="numeric" min="0" data-k="${mk}.minutes" value="${esc(s.f[mk+'.minutes'])}"></label>
+          <label class="f" style="margin-top:0">Vervoer<select class="inp" data-k="${mk}.mode">
+            <option value="" ${!s.f[mk+'.mode']?'selected':''}>–</option>
+            ${f.modes.map(m=>`<option value="${m}" ${s.f[mk+'.mode']===m?'selected':''}>${m}</option>`).join('')}
+          </select></label>
+        </div>`:''}
+      </div>`;
+    }).join('');
   }
   else body=optButtons(s,f,f.type==='multi');
   const showOther = f.other && (Array.isArray(v)?v.includes(f.other):v===f.other);
@@ -582,8 +609,6 @@ function fieldHTML(s,f){
         <div class="fnote-head"><button type="button" class="link" data-a="hidenote" data-id="${k}">Opmerking inklappen</button></div>
         <textarea class="inp note" data-note="${k}" rows="2" placeholder="${flagged?'Wat is er niet in orde?':'Opmerking'}">${esc(note)}</textarea>
         <div class="fn-row">
-          <div class="fn-score"><span class="fn-lbl">Score <b data-scoreval="${k}">${sc??'–'}</b>/10</span>
-            <input type="range" min="0" max="10" step="1" data-score="${k}" value="${sc??0}"></div>
           <div class="opts fn-comp">
             <button data-a="pickcompliance" data-id="${k}" data-v="Compliant" aria-pressed="${comp==='Compliant'}">Compliant</button>
             <button data-a="pickcompliance" data-id="${k}" data-v="Non-compliant" aria-pressed="${comp==='Non-compliant'}" class="bad">Non-compliant</button>
@@ -816,6 +841,7 @@ function refreshStats(){
   $('#progBar').style.width=doneCount(s)/TOTAL*100+'%';
   $('#chips').innerHTML=chipsHTML(s);
   SECTIONS.forEach(sec=>{ const el=document.querySelector(`[data-meta="${sec.id}"]`); if(el) el.innerHTML=metaHTML(s,sec); });
+  setDock(editDockHTML(s));
 }
 
 function renderReport(){
@@ -1113,6 +1139,7 @@ document.addEventListener('click', async e=>{
   else if(a==='airqualityauto'){ s.airQualityAuto=true; rerenderField(s,'airQualityIndex'); scheduleAirQualityLookup(s); }
   else if(a==='retryairquality'){ s.airQualityAuto=true; s.airQualityError=null; touch(s); rerenderField(s,'airQualityIndex'); tryFetchAirQuality(s); }
   else if(a==='toggle'){ const id=b.dataset.id, v=b.dataset.v; const arr=s.f[id]||[]; s.f[id]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
+  else if(a==='togglenearby'){ const id=b.dataset.id, v=b.dataset.v, selKey=`${id}.selected`; const arr=s.f[selKey]||[]; s.f[selKey]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='pickdetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; s.f[dk] = s.f[dk]===v?undefined:v; if(s.f[dk]===undefined) delete s.f[dk]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='toggledetail'){ const id=b.dataset.id, v=b.dataset.v, dk=id+'.detail'; const arr=s.f[dk]||[]; s.f[dk]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='meal'){ const k=`${b.dataset.id}.${b.dataset.i}.meals`, v=b.dataset.v; const arr=s.f[k]||[]; s.f[k]=arr.includes(v)?arr.filter(x=>x!==v):[...arr,v]; touch(s); b.setAttribute('aria-pressed',s.f[k].includes(v)); }
@@ -1187,7 +1214,6 @@ document.addEventListener('input', e=>{
       box.hidden=!matches.length; }
     if(doneCount(s)!==was) refreshStats(); }
   else if(d.note){ s.notes[d.note]=el.value; touch(s); }
-  else if(d.score){ s.scores[d.score]=Number(el.value); touch(s); const b=document.querySelector(`[data-scoreval="${d.score}"]`); if(b) b.textContent=el.value; }
   else if(d.photolabel){ const p=s.photos.find(x=>x.id===d.photolabel); if(p){ p.label=el.value; touch(s); } }
   else if(d.datepart){ const [y,m,dd]=(s.date||today()).split('-'); const parts={y,m,d:dd}; parts[d.datepart]=el.value; s.date=`${parts.y}-${parts.m}-${parts.d}`; touch(s); }
   else if(d.top){
@@ -1340,7 +1366,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.22.0';
+const APP_VERSION='1.23.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
