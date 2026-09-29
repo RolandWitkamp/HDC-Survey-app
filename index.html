@@ -344,12 +344,12 @@ const store = {
     }catch(e){ this.db=null; toast('Opslaan mislukt: sluit de app volledig af en open hem opnieuw.'); res(); } });
   }
 };
-let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'' };
+let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
 let advancedUnlocked = false, versionTaps = 0, versionTapTimer = null;
 let saveTimer=null;
-function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); }
+function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); }
 function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(flushPersist,300); }
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden' && saveTimer) flushPersist(); });
 window.addEventListener('pagehide', ()=>{ if(saveTimer) flushPersist(); });
@@ -674,8 +674,9 @@ function dataUrlToFile(dataUrl,filename){
   for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
   return new File([arr],filename,{type:mime});
 }
-async function savePhotosToLibrary(s){
-  const files=s.photos.map((p,i)=>dataUrlToFile(p.data,`${(p.label||'foto').replace(/[^a-z0-9]+/gi,'-')||'foto-'+(i+1)}.jpg`));
+async function savePhotosToLibrary(s,photos){
+  photos=photos||s.photos;
+  const files=photos.map((p,i)=>dataUrlToFile(p.data,`${(p.label||'foto').replace(/[^a-z0-9]+/gi,'-')||'foto-'+(i+1)}.jpg`));
   if(navigator.canShare?.({files})){
     try{ await navigator.share({files}); }catch(e){ if(e.name!=='AbortError') toast('Bewaren is niet gelukt.'); }
     return;
@@ -960,6 +961,13 @@ function renderSettings(){
         <span style="color:var(--ink)">Hotel-suggesties tonen tijdens typen</span>
       </label>
       <p class="hint" style="margin-top:8px">Toont bij het intypen van de hotelnaam (via OpenStreetMap) een lijst met mogelijke hotels om uit te kiezen; kies je er één, dan vult het adres automatisch in. Werkt alleen met internetverbinding.</p>
+    </section>
+    <section class="panel"><h2>Foto's</h2>
+      <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
+        <input type="checkbox" data-set="autoSavePhotos" ${S.autoSavePhotos?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
+        <span style="color:var(--ink)">Direct na elke foto het deelvenster openen om 'm in de fotobibliotheek te bewaren</span>
+      </label>
+      <p class="hint" style="margin-top:8px">Je moet in dat deelvenster nog wel zelf op "Bewaar afbeelding" tikken — dat kan iOS niet geruisloos vanuit een website. Staat dit uit, dan kun je foto's nog altijd zelf bewaren via de knop onder de foto's in een survey.</p>
     </section>
     <section class="panel"><h2>Rijtijd naar luchthaven</h2>
       <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
@@ -1305,13 +1313,16 @@ document.addEventListener('change', async e=>{
   }
   if(el.dataset.set==='autoDriveTime'){ S.autoDriveTime=el.checked; persist(); }
   if(el.dataset.set==='autoAddress'){ S.autoAddress=el.checked; persist(); }
+  if(el.dataset.set==='autoSavePhotos'){ S.autoSavePhotos=el.checked; persist(); }
   if(el.dataset.set==='autoAirQuality'){ S.autoAirQuality=el.checked; persist(); }
   if(el.dataset.grp){ const id=el.dataset.grp; s.recip.groups = el.checked ? [...new Set([...s.recip.groups,id])] : s.recip.groups.filter(x=>x!==id); touch(s); }
   if(el.dataset.photo && el.files?.length){
     const defLabel=el.dataset.photoLabel||'';
-    for(const file of el.files){ try{ const p=await compress(file); s.photos.push({id:uid(),label:defLabel,...p}); }catch(err){ toast('Foto kon niet worden gelezen. Probeer een JPG of PNG.'); } }
+    const added=[];
+    for(const file of el.files){ try{ const p=await compress(file); const ph={id:uid(),label:defLabel,...p}; s.photos.push(ph); added.push(ph); }catch(err){ toast('Foto kon niet worden gelezen. Probeer een JPG of PNG.'); } }
     el.value=''; touch(s);
     document.querySelector('[data-photos]').innerHTML=photosHTML(s);
+    if(S.autoSavePhotos && added.length) savePhotosToLibrary(s,added);
   }
 });
 function nonCompliantFields(s){ return ALL.filter(f=>f.id!=='cao' && (isFlag(s,f) || s.compliance?.[f.id]==='Non-compliant')); }
@@ -1430,7 +1441,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.28.0';
+const APP_VERSION='1.29.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
@@ -1505,6 +1516,7 @@ async function exportAll(){
   S.googleMapsKey=(await store.get('googleMapsKey'))||'';
   const savedAutoAQ=await store.get('autoAirQuality'); S.autoAirQuality = savedAutoAQ===undefined ? true : savedAutoAQ;
   S.waqiToken=(await store.get('waqiToken'))||'';
+  const savedAutoSavePhotos=await store.get('autoSavePhotos'); S.autoSavePhotos = savedAutoSavePhotos===undefined ? true : savedAutoSavePhotos;
   render();
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){

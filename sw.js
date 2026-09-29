@@ -1,5 +1,5 @@
 // Verhoog dit versienummer bij elke update, anders blijven apparaten de oude versie gebruiken.
-const CACHE = 'hotel-survey-v1.28.0';
+const CACHE = 'hotel-survey-v1.29.0';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './jspdf.umd.min.js',
   './fonts/atkinson-hyperlegible-latin-400-normal.woff2',
