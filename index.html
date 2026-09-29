@@ -1327,11 +1327,15 @@ document.addEventListener('change', async e=>{
   if(el.dataset.grp){ const id=el.dataset.grp; s.recip.groups = el.checked ? [...new Set([...s.recip.groups,id])] : s.recip.groups.filter(x=>x!==id); touch(s); }
   if(el.dataset.photo && el.files?.length){
     const defLabel=el.dataset.photoLabel||'';
+    const rawFiles=[...el.files];
+    const shareP=(S.autoSavePhotos && navigator.canShare?.({files:rawFiles}))
+      ? navigator.share({files:rawFiles}).then(()=>true).catch(e=>{ if(e.name!=='AbortError') toast('Bewaren is niet gelukt.'); return false; })
+      : Promise.resolve(false);
     const added=[];
     for(const file of el.files){ try{ const p=await compress(file); const ph={id:uid(),label:defLabel,...p}; s.photos.push(ph); added.push(ph); }catch(err){ toast('Foto kon niet worden gelezen. Probeer een JPG of PNG.'); } }
     el.value=''; touch(s);
     refreshPhotosUI(s);
-    if(S.autoSavePhotos && added.length) savePhotosToLibrary(s,added);
+    if(await shareP){ added.forEach(p=>p.savedToLibrary=true); touch(s); }
   }
 });
 function nonCompliantFields(s){ return ALL.filter(f=>f.id!=='cao' && (isFlag(s,f) || s.compliance?.[f.id]==='Non-compliant')); }
@@ -1450,7 +1454,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.31.0';
+const APP_VERSION='1.31.1';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
