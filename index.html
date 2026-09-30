@@ -506,7 +506,7 @@ function renderHome(){
 
 function renderEdit(){
   const s=cur(); if(!s){view={name:'home'};return render();}
-  setBar(`<button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>${esc(title(s))}</h1><button class="icon-btn" data-a="sharesurvey" aria-label="Share survey">${ICON.share}</button><button class="icon-btn" data-a="savephotos" aria-label="Save photos to library">${ICON.image}</button><button class="icon-btn" data-a="delete" aria-label="Delete survey">${ICON.trash}</button>`);
+  setBar(`<button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>${esc(title(s))}</h1><button class="icon-btn" data-a="sharesurvey" aria-label="Export survey (backup)">${ICON.share}</button><button class="icon-btn" data-a="savephotos" aria-label="Save photos to library">${ICON.image}</button><button class="icon-btn" data-a="delete" aria-label="Delete survey">${ICON.trash}</button>`);
   const v=verdict(s);
   $('#app').innerHTML = `
     <section class="panel">
@@ -1278,7 +1278,7 @@ document.addEventListener('click', async e=>{
   else if(a==='report'){view={name:'report',id:s.id};render();}
   else if(a==='back-edit'){view={name:'edit',id:s.id};render();}
   else if(a==='delete'){ if(confirm(`Delete survey "${title(s)}"?`)){ S.surveys=S.surveys.filter(x=>x.id!==s.id); persist(); view={name:'home'}; render(); toast('Survey deleted'); } }
-  else if(a==='sharesurvey') exportSurvey(s);
+  else if(a==='sharesurvey'){ if(confirm('Also back up ALL surveys, instead of just this one?')) exportAll(); else exportSurvey(s); }
   else if(a==='pick'){ const id=b.dataset.id, v=b.dataset.v; if(id==='cao') s.caoAuto=false; s.f[id] = s.f[id]===v?undefined:v; if(s.f[id]===undefined) delete s.f[id]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='caoauto'){ s.caoAuto=true; touch(s); rerenderField(s,'cao'); refreshStats(); }
   else if(a==='drivetimeauto'){ s.driveTimeAuto=true; rerenderField(s,'driveTime'); scheduleDriveTimeLookup(s); }
@@ -1523,7 +1523,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.36.0';
+const APP_VERSION='1.36.1';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
