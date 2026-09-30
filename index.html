@@ -542,7 +542,10 @@ function optButtons(s,f,multi){
     return `<button data-a="${multi?'toggle':'pick'}" data-id="${f.id}" data-v="${esc(o)}" aria-pressed="${on}" class="${f.flag?.includes(o)?'bad':''}">${esc(o)}</button>`; }).join('')}</div>`;
 }
 function fieldHTML(s,f){
-  const k=f.id, v=s.f[k], flagged=isFlag(s,f);
+  const k=f.id;
+  if(f.type==='multi' && s.f[k]!=null && s.f[k]!=='' && !Array.isArray(s.f[k])) s.f[k]=[s.f[k]];
+  if(f.detail && (f.detail.type==='search'||f.detail.type==='multi') && s.f[k+'.detail']!=null && s.f[k+'.detail']!=='' && !Array.isArray(s.f[k+'.detail'])) s.f[k+'.detail']=[s.f[k+'.detail']];
+  const v=s.f[k], flagged=isFlag(s,f);
   let body='';
   if(f.type==='text') body=`<input class="inp" data-k="${k}" value="${esc(v)}" ${f.mode?`inputmode="${f.mode}"`:''} placeholder="${esc(f.ph||'')}" aria-label="${esc(f.label)}">`;
   else if(f.type==='area') body=`<textarea class="inp" data-k="${k}" rows="3" aria-label="${esc(f.label)}">${esc(v)}</textarea>`;
@@ -1477,7 +1480,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.35.0';
+const APP_VERSION='1.35.1';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
