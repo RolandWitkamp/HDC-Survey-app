@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -210,7 +210,7 @@ textarea{resize:vertical;min-height:72px}
    type: text | area | choice | multi | pair | restaurants | slider | mealtimes
    detail.type: choice | search | (text, default)
    flag: answers that count as a finding (shown in red, listed in report)
-   scores/compliance: optional 0-10 score and compliant/non-compliant judgement per field, set via "+ opmerking"   */
+   scores/compliance: optional 0-10 score and compliant/non-compliant judgement per field, set via "+ note"   */
 const YN=['Yes','No'], CMP=['Compliant','Not compliant'];
 const ICON={
   trash:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
@@ -233,7 +233,8 @@ const SECTIONS = [
     {id:'occupancyRate', label:'Occupancy rate', type:'select', options:Array.from({length:21},(_,i)=>`${i*5}%`)},
     {id:'management', label:'Management', type:'text'},
     {id:'airlineExp', label:'Airline experience', type:'choice', options:YN, detail:{when:'Yes', type:'search'}},
-    {id:'crewCheckin', label:'Separate check-in for crew', type:'choice', options:YN}]},
+    {id:'crewCheckin', label:'Separate check-in for crew', type:'choice', options:YN},
+    {id:'generalInfo', label:'Other information', type:'area', optional:true}]},
   {id:'facilities', name:'Facilities', fields:[
     {id:'mealHours', label:'Meal times', type:'mealtimes', meals:['Breakfast','Lunch','Dinner'], days:['Mo-Fri','Sa-Su'], standard:"Artikel 2c: dinertijden — voor crews die met de vroege vlucht vertrekken moet de avond voorafgaand tussen 17.00-19.00 uur LT gedineerd kunnen worden. Ontbijttijden Europa: het hotel regelt een ontbijt voor de vroegst vertrekkende crew. Oostelijk gelegen stations (tijdsverschil ≥5 uur): ontbijt tot 15:00 lokale tijd op rekening van KLM."},
     {id:'breakfastType', label:'Breakfast type', type:'choice', options:['Buffet','A la carte','Other'], other:'Other', standard:"Artikel 3a — norm ontbijt: vruchtensap, 2 eieren met ham, brood, boter en thee of koffie."},
@@ -298,16 +299,16 @@ const SECTIONS = [
     {id:'nOutside', label:'Outside', type:'choice', options:CMP, flag:['Not compliant']},
     {id:'nPiping', label:'Piping system', type:'choice', options:CMP, flag:['Not compliant']},
     {id:'nRoomDoor', label:'Room door', type:'choice', options:CMP, flag:['Not compliant']},
-    {id:'nOther', label:'Other', type:'text'},
     {id:'renovationsPlanned', label:'Renovations planned', type:'choice', options:['Yes, soft','Yes, hard','No'], flag:['Yes, hard']},
     {id:'constructionOutside', label:'Construction outside', type:'choice', options:YN, flag:['Yes']}]},
   {id:'verdict', name:'CAO compliance', fields:[
     {id:'cao', label:'CAO compliant', type:'choice', options:YN, flag:['No']},
-    {id:'otherInfo', label:'Other information', type:'area'}]}
+    {id:'otherInfo', label:'Other information', type:'area', optional:true}]}
 ];
 const ALL = SECTIONS.flatMap(s=>s.fields.map(f=>({...f,sec:s.id})));
 const FIELD = Object.fromEntries(ALL.map(f=>[f.id,f]));
-const TOTAL = ALL.length;
+const reqFields = fs=>fs.filter(f=>!f.optional);
+const TOTAL = reqFields(ALL).length;
 const MEAL_DEFAULTS=[{from:'06:00',to:'10:30'},{from:'12:30',to:'15:30'},{from:'18:30',to:'22:30'}];
 function seedMealDefaults(f){ const out={}; f.meals.forEach((_,mi)=>{ const d=MEAL_DEFAULTS[mi]||MEAL_DEFAULTS[0]; out[`${f.id}.${mi}.weekendAuto`]=true; f.days.forEach((_,di)=>{ out[`${f.id}.${mi}.${di}.from`]=d.from; out[`${f.id}.${mi}.${di}.to`]=d.to; }); }); return out; }
 const TIME_SLOTS = Array.from({length:48},(_,i)=>`${String(Math.floor(i/2)).padStart(2,'0')}:${i%2?'30':'00'}`);
@@ -315,13 +316,13 @@ const TIME_SLOTS = Array.from({length:48},(_,i)=>`${String(Math.floor(i/2)).padS
 /* ---------- Storage (IndexedDB, falls back to memory) ---------- */
 let shareBusy=false;
 function shareGuard(payload){
-  if(shareBusy){ toast('Er loopt al een deel-actie, wacht heel even en probeer opnieuw.'); const e=new Error('busy'); e.name='AbortError'; return Promise.reject(e); }
+  if(shareBusy){ toast('A share action is already in progress, wait a moment and try again.'); const e=new Error('busy'); e.name='AbortError'; return Promise.reject(e); }
   shareBusy=true;
   let done=false;
   const clear=()=>{ done=true; shareBusy=false; };
   return Promise.race([
     navigator.share(payload).then(v=>{ clear(); return v; }, e=>{ clear(); throw e; }),
-    new Promise((_,rej)=>setTimeout(()=>{ if(!done){ clear(); const e=new Error('Het deelvenster reageerde niet.'); e.name='TimeoutError'; rej(e); } },8000))
+    new Promise((_,rej)=>setTimeout(()=>{ if(!done){ clear(); const e=new Error('The share sheet did not respond.'); e.name='TimeoutError'; rej(e); } },8000))
   ]);
 }
 const store = {
@@ -349,12 +350,12 @@ const store = {
   async set(k,v){
     this.mem[k]=v;
     if(!this.db) await this.open();
-    if(!this.db){ toast('Opslaan mislukt: opslag kon niet geopend worden. Sluit de app volledig af en open hem opnieuw.'); return; }
+    if(!this.db){ toast('Saving failed: storage could not be opened. Fully close the app and reopen it.'); return; }
     return new Promise(res=>{ try{
       const t=this.db.transaction('kv','readwrite'); t.objectStore('kv').put(v,k);
       t.oncomplete=()=>res();
-      t.onerror=()=>{ toast('Opslaan mislukt: opslag van dit apparaat is vol of geblokkeerd.'); res(); };
-    }catch(e){ this.db=null; toast('Opslaan mislukt: sluit de app volledig af en open hem opnieuw.'); res(); } });
+      t.onerror=()=>{ toast('Saving failed: this device\'s storage is full or blocked.'); res(); };
+    }catch(e){ this.db=null; toast('Saving failed: fully close the app and reopen it.'); res(); } });
   }
 };
 let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true };
@@ -380,11 +381,11 @@ function dateSelectHTML(s){
   const days=Array.from({length:31},(_,i)=>opt(String(i+1).padStart(2,'0'),d)).join('');
   const months=Array.from({length:12},(_,i)=>opt(String(i+1).padStart(2,'0'),m)).join('');
   const years=Array.from({length:4},(_,i)=>opt(String(curY-2+i),y)).join('');
-  return `<select class="inp" data-datepart="d" aria-label="Dag">${days}</select><select class="inp" data-datepart="m" aria-label="Maand">${months}</select><select class="inp" data-datepart="y" aria-label="Jaar">${years}</select>`;
+  return `<select class="inp" data-datepart="d" aria-label="Day">${days}</select><select class="inp" data-datepart="m" aria-label="Month">${months}</select><select class="inp" data-datepart="y" aria-label="Year">${years}</select>`;
 }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),3800); }
 const cur = ()=>{ const s=S.surveys.find(x=>x.id===view.id); if(s){ s.scores=s.scores||{}; s.compliance=s.compliance||{}; if(s.caoAuto===undefined) s.caoAuto=true; if(s.driveTimeAuto===undefined) s.driveTimeAuto=true; if(s.airQualityAuto===undefined) s.airQualityAuto=true; if(s.address===undefined) s.address=''; } return s; };
-const title = s=>s.hotel||'Naamloos hotel';
+const title = s=>s.hotel||'Unnamed hotel';
 const surveyedBy = s=>[s.reps,s.inspector].filter(Boolean).join(' & ');
 const nonEmpty = v=>Array.isArray(v)?v.length>0:(v!=null&&String(v).trim()!=='');
 
@@ -399,12 +400,12 @@ function filled(s,f){
 const nearbySlug = o=>o.toLowerCase().replace(/[^a-z0-9]+/g,'');
 const isFlag = (s,f)=>(!!f.flag && f.flag.includes(s.f[f.id])) || (!!f.detail?.flag && s.f[f.id]===f.detail.when && f.detail.flag.includes(s.f[f.id+'.detail']));
 const flags = s=>ALL.filter(f=>isFlag(s,f));
-const doneCount = (s,fs=ALL)=>fs.filter(f=>filled(s,f)).length;
+const doneCount = (s,fs=ALL)=>reqFields(fs).filter(f=>filled(s,f)).length;
 function verdict(s){ const c=s.f.cao, n=flags(s).length;
-  if(c==='No') return {k:'bad', t:'!', w:'Niet CAO-compliant'};
-  if(n) return {k:'warn', t:String(n), w:`${n} bevinding${n>1?'en':''}`};
+  if(c==='No') return {k:'bad', t:'!', w:'Not CAO-compliant'};
+  if(n) return {k:'warn', t:String(n), w:`${n} finding${n>1?'s':''}`};
   if(c==='Yes') return {k:'ok', t:'✓', w:'CAO-compliant'};
-  return {k:'0', t:'–', w:'CAO nog niet beoordeeld'}; }
+  return {k:'0', t:'–', w:'CAO not yet assessed'}; }
 function avgScore(s){ const vals=Object.values(s.scores||{}).filter(v=>v!=null); return vals.length? vals.reduce((a,b)=>a+b,0)/vals.length : null; }
 function sectionCompliance(s,sec){ const vals=sec.fields.map(f=>s.compliance?.[f.id]).filter(Boolean);
   if(vals.includes('Non-compliant')) return 'Non-compliant';
@@ -445,65 +446,65 @@ function valueText(s,f){
 }
 
 /* ---------- Views ---------- */
-function setBar(html){ $('#bar').innerHTML=html+(view.name==='docs'?'':`<button class="icon-btn" data-a="docs" aria-label="Werkafspraken">${ICON.book}</button>`); }
+function setBar(html){ $('#bar').innerHTML=html+(view.name==='docs'?'':`<button class="icon-btn" data-a="docs" aria-label="Policy document">${ICON.book}</button>`); }
 function setDock(html){ const d=$('#dock'); if(!html){d.hidden=true;return;} d.hidden=false; $('#dockIn').innerHTML=html; }
 function editDockHTML(s){
   const remaining=TOTAL-doneCount(s);
-  return `<button class="btn primary" data-a="report" style="flex:1" ${remaining>0?'disabled':''}>${remaining>0?`Nog ${remaining} punt${remaining===1?'':'en'} invullen`:'Rapport en delen'}</button>
-    <label class="btn dock-photo-btn" aria-label="Foto toevoegen">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
+  return `<button class="btn primary" data-a="report" style="flex:1" ${remaining>0?'disabled':''}>${remaining>0?`${remaining} item${remaining===1?'':'s'} left`:'Report & share'}</button>
+    <label class="btn dock-photo-btn" aria-label="Add photo">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
 }
 function render(){ window.scrollTo(0,0);
   ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs})[view.name](); }
 
 function renderHome(){
-  setBar(`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span><button class="icon-btn" data-a="settings" aria-label="Instellingen">${ICON.settings}</button>`);
+  setBar(`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span><button class="icon-btn" data-a="settings" aria-label="Settings">${ICON.settings}</button>`);
   const list=[...S.surveys].sort((a,b)=>(b.updated||0)-(a.updated||0));
   $('#app').innerHTML = list.length ? list.map(s=>{ const v=verdict(s); return `
     <div class="swipe-row">
-      <button class="swipe-del" data-a="swipedelete" data-id="${s.id}" aria-label="Survey verwijderen">${ICON.trash}<span>Verwijderen</span></button>
+      <button class="swipe-del" data-a="swipedelete" data-id="${s.id}" aria-label="Delete survey">${ICON.trash}<span>Delete</span></button>
       <button class="survey-row" data-a="open" data-id="${s.id}">
         <span class="stamp" data-s="${v.k}" aria-label="${v.w}">${v.t}</span>
         <span class="t"><b>${esc(title(s))}</b>
           <span>${esc([s.city,dateNL(s.date)].filter(Boolean).join(', '))} · ${v.w}</span>
-          <span class="status ${s.status==='verzonden'?'sent':''}">${s.status==='verzonden'?'Verzonden':'Concept'}</span></span>
+          <span class="status ${s.status==='verzonden'?'sent':''}">${s.status==='verzonden'?'Sent':'Draft'}</span></span>
       </button>
     </div>`}).join('') : `
-    <div class="empty"><h2>Nog geen surveys</h2>
-      <p>Start een survey bij aankomst in het hotel. Alles wordt op dit apparaat bewaard, ook zonder verbinding.</p></div>`;
+    <div class="empty"><h2>No surveys yet</h2>
+      <p>Start a survey when you arrive at the hotel. Everything is saved on this device, even offline.</p></div>`;
   $('#app').innerHTML += `<div class="home-foot">${ICON.mark}</div>`;
-  setDock(`<button class="btn primary" data-a="new">Nieuwe survey</button>`);
+  setDock(`<button class="btn primary" data-a="new">New survey</button>`);
 }
 
 function renderEdit(){
   const s=cur(); if(!s){view={name:'home'};return render();}
-  setBar(`<button class="icon-btn" data-a="home" aria-label="Terug">←</button><h1>${esc(title(s))}</h1><button class="icon-btn" data-a="sharesurvey" aria-label="Survey delen">${ICON.share}</button><button class="icon-btn" data-a="savephotos" aria-label="Foto's bewaren in fotobibliotheek">${ICON.image}</button><button class="icon-btn" data-a="delete" aria-label="Survey verwijderen">${ICON.trash}</button>`);
+  setBar(`<button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>${esc(title(s))}</h1><button class="icon-btn" data-a="sharesurvey" aria-label="Share survey">${ICON.share}</button><button class="icon-btn" data-a="savephotos" aria-label="Save photos to library">${ICON.image}</button><button class="icon-btn" data-a="delete" aria-label="Delete survey">${ICON.trash}</button>`);
   const v=verdict(s);
   $('#app').innerHTML = `
     <section class="panel">
       <div class="summary"><span class="stamp big" id="ovStamp" data-s="${v.k}">${v.t}</span>
         <div class="txt"><b id="ovWord">${v.w}</b>
-        <p class="hint" id="progTxt">${doneCount(s)} van ${TOTAL} punten ingevuld</p>
+        <p class="hint" id="progTxt">${doneCount(s)} of ${TOTAL} items filled in</p>
         <div class="progress"><i id="progBar" style="width:${doneCount(s)/TOTAL*100}%"></i></div></div></div>
     </section>
-    <div class="chips-wrap"><nav class="chips" id="chips" aria-label="Secties">${chipsHTML(s)}</nav><button type="button" class="icon-btn chips-collapse" data-a="collapseall" aria-label="Alles inklappen">${ICON.collapse}</button></div>
+    <div class="chips-wrap"><nav class="chips" id="chips" aria-label="Sections">${chipsHTML(s)}</nav><button type="button" class="icon-btn chips-collapse" data-a="collapseall" aria-label="Collapse all">${ICON.collapse}</button></div>
     <section class="panel" id="sec-hotel">
       <h2>Hotel</h2>
       <div class="ta-wrap"><label class="f">Hotel name<input data-top="hotel" value="${esc(s.hotel)}" autocomplete="off"></label>
         <div class="ta-list" data-hotel-suggest hidden></div>
       </div>
-      <label class="f">Adres<input data-top="address" value="${esc(s.address)}" placeholder="Straat, plaats, land" autocomplete="off"></label>
-      <label class="f">City code<input data-top="city" value="${esc(s.city)}" autocapitalize="characters" maxlength="3" placeholder="bijv. NBO"></label>
-      <label class="f">Datum</label>
+      <label class="f">Address<input data-top="address" value="${esc(s.address)}" placeholder="Street, city, country" autocomplete="off"></label>
+      <label class="f">City code<input data-top="city" value="${esc(s.city)}" autocapitalize="characters" maxlength="3" placeholder="e.g. NBO"></label>
+      <label class="f">Date</label>
       <div class="grid3">${dateSelectHTML(s)}</div>
       <label class="f">Hodaco Rep<input data-top="reps" value="${esc(s.reps)}"></label>
       <label class="f">NI Rep<input data-top="inspector" value="${esc(s.inspector)}"></label>
     </section>
     <section class="panel">
-      <h2>Foto's</h2>
-      <p class="hint">Maak of kies een foto en geef 'm een label, bijv. Breakfast, Gym of Room 512.</p>
+      <h2>Photos</h2>
+      <p class="hint">Take or choose a photo and give it a label, e.g. Breakfast, Gym or Room 512.</p>
       <div class="photos" data-photos>${photosHTML(s)}</div>
-      <label class="add-photo">📷 Foto toevoegen<input type="file" accept="image/*" multiple data-photo="1"></label>
-      <button type="button" class="btn wide" style="margin-top:10px" data-a="savephotos" data-photos-save-btn ${s.photos.length?'':'hidden'}>Bewaar foto's in fotobibliotheek</button>
+      <label class="add-photo">📷 Add photo<input type="file" accept="image/*" multiple data-photo="1"></label>
+      <button type="button" class="btn wide" style="margin-top:10px" data-a="savephotos" data-photos-save-btn ${s.photos.length?'':'hidden'}>Save photos to library</button>
     </section>
     ${SECTIONS.map(sec=>`
     <section class="panel" id="sec-${sec.id}">
@@ -514,25 +515,25 @@ function renderEdit(){
       </button>
       <div class="sec-body" hidden>
         ${sec.fields.map(f=>fieldHTML(s,f)).join('')}
-        <label class="add-photo">📷 Foto toevoegen<input type="file" accept="image/*" multiple data-photo="1" data-photo-label="${esc(sec.name)}"></label>
-        <button type="button" class="btn wide sec-collapse" data-a="closesec" data-id="${sec.id}">▴ ${esc(sec.name)} inklappen</button>
+        <label class="add-photo">📷 Add photo<input type="file" accept="image/*" multiple data-photo="1" data-photo-label="${esc(sec.name)}"></label>
+        <button type="button" class="btn wide sec-collapse" data-a="closesec" data-id="${sec.id}">▴ Collapse ${esc(sec.name)}</button>
       </div>
     </section>`).join('')}`;
   setDock(editDockHTML(s));
   if(!s.f.driveTime) scheduleDriveTimeLookup(s);
 }
 function chipsHTML(s){ return SECTIONS.map(sec=>{ const n=sec.fields.filter(f=>isFlag(s,f)).length;
-  return `<button type="button" data-a="jumpsec" data-id="${sec.id}" class="${n?'has-flag':''}">${sec.name}<b>${n?'! '+n:doneCount(s,sec.fields)+'/'+sec.fields.length}</b></button>`; }).join(''); }
+  return `<button type="button" data-a="jumpsec" data-id="${sec.id}" class="${n?'has-flag':''}">${sec.name}<b>${n?'! '+n:doneCount(s,sec.fields)+'/'+reqFields(sec.fields).length}</b></button>`; }).join(''); }
 function metaHTML(s,sec){ const n=sec.fields.filter(f=>isFlag(s,f)).length;
-  return `${doneCount(s,sec.fields)}/${sec.fields.length}${n?` · <span class="fl">${n} bevinding${n>1?'en':''}</span>`:''}`; }
+  return `${doneCount(s,sec.fields)}/${reqFields(sec.fields).length}${n?` · <span class="fl">${n} finding${n>1?'s':''}</span>`:''}`; }
 
 function tagPickerHTML(s,f,k,arr){
   arr=arr||[];
   const remaining=f.options.filter(o=>!arr.includes(o));
-  return `<select class="inp" data-tagadd="${k}" aria-label="${esc(f.label)} toevoegen">
-    <option value="">Kies om toe te voegen…</option>
+  return `<select class="inp" data-tagadd="${k}" aria-label="Add ${esc(f.label)}">
+    <option value="">Choose to add…</option>
     ${remaining.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('')}
-  </select>${arr.length?`<div class="tags">${arr.map(o=>`<span class="tag">${esc(o)}<button type="button" data-a="removetag" data-id="${k}" data-v="${esc(o)}" aria-label="Verwijderen">×</button></span>`).join('')}</div>`:''}`;
+  </select>${arr.length?`<div class="tags">${arr.map(o=>`<span class="tag">${esc(o)}<button type="button" data-a="removetag" data-id="${k}" data-v="${esc(o)}" aria-label="Remove">×</button></span>`).join('')}</div>`:''}`;
 }
 function optButtons(s,f,multi){
   const v=s.f[f.id];
@@ -568,29 +569,29 @@ function fieldHTML(s,f){
             <label class="f" style="margin-top:0">${esc(day)} from<select class="inp" data-k="${kf}">${opts(kf)}</select></label>
             <label class="f" style="margin-top:0">to<select class="inp" data-k="${kt}">${opts(kt)}</select></label>
           </div>`; }).join('')}
-          <p class="hint" data-wkhint="${mi}" style="margin-top:6px" ${s.f[`${mk}.weekendAuto`]===false?'hidden':''}>Sa-Su volgt automatisch Mo-Fri, tot je Sa-Su zelf aanpast.</p>
+          <p class="hint" data-wkhint="${mi}" style="margin-top:6px" ${s.f[`${mk}.weekendAuto`]===false?'hidden':''}>Sa-Su follows Mo-Fri automatically, until you adjust Sa-Su yourself.</p>
         </div>
       </div>`; }).join('');
   }
   else if(f.type==='select'){
     body = `<select class="inp" data-k="${k}" aria-label="${esc(f.label)}">
-      <option value="" ${!v?'selected':''}>Kies…</option>
+      <option value="" ${!v?'selected':''}>Choose…</option>
       ${f.options.map(o=>`<option value="${esc(o)}" ${v===o?'selected':''}>${esc(o)}</option>`).join('')}
     </select>`;
   }
   else if(f.type==='nearby'){
     const sel=s.f[`${k}.selected`]||[];
     const remaining=f.options.filter(o=>!sel.includes(o));
-    body = `<select class="inp" data-tagadd="${k}.selected" aria-label="${esc(f.label)} toevoegen">
-        <option value="">Kies om toe te voegen…</option>
+    body = `<select class="inp" data-tagadd="${k}.selected" aria-label="Add ${esc(f.label)}">
+        <option value="">Choose to add…</option>
         ${remaining.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('')}
       </select>` +
       sel.map(o=>{ const slug=nearbySlug(o), mk=`${k}.${slug}`;
         return `<div class="nearby-item">
-          <div class="field-label"><span>${esc(o)}</span><button type="button" class="link" data-a="removetag" data-id="${k}.selected" data-v="${esc(o)}">Verwijderen</button></div>
+          <div class="field-label"><span>${esc(o)}</span><button type="button" class="link" data-a="removetag" data-id="${k}.selected" data-v="${esc(o)}">Remove</button></div>
           <div class="grid2 sub">
-            <label class="f" style="margin-top:0">Minuten<input class="inp" type="number" inputmode="numeric" min="0" data-k="${mk}.minutes" value="${esc(s.f[mk+'.minutes'])}"></label>
-            <label class="f" style="margin-top:0">Vervoer<select class="inp" data-k="${mk}.mode">
+            <label class="f" style="margin-top:0">Minutes<input class="inp" type="number" inputmode="numeric" min="0" data-k="${mk}.minutes" value="${esc(s.f[mk+'.minutes'])}"></label>
+            <label class="f" style="margin-top:0">Transport<select class="inp" data-k="${mk}.mode">
               <option value="" ${!s.f[mk+'.mode']?'selected':''}>–</option>
               ${f.modes.map(m=>`<option value="${m}" ${s.f[mk+'.mode']===m?'selected':''}>${m}</option>`).join('')}
             </select></label>
@@ -601,7 +602,7 @@ function fieldHTML(s,f){
   else body=optButtons(s,f,f.type==='multi');
   const showOther = f.other && (Array.isArray(v)?v.includes(f.other):v===f.other);
   const showDetail = f.detail && v===f.detail.when;
-  if(showOther) body+=`<input class="inp sub" data-k="${k}.other" value="${esc(s.f[k+'.other'])}" placeholder="Specificeer">`;
+  if(showOther) body+=`<input class="inp sub" data-k="${k}.other" value="${esc(s.f[k+'.other'])}" placeholder="Please specify">`;
   if(showDetail){
     if(f.detail.type==='choice'){
       const dv=s.f[k+'.detail'];
@@ -610,26 +611,26 @@ function fieldHTML(s,f){
         return `<button data-a="pickdetail" data-id="${k}" data-v="${esc(o)}" aria-pressed="${on}" class="${f.detail.flag?.includes(o)?'bad':''}">${esc(o)}</button>`; }).join('')}</div>`;
     } else if(f.detail.type==='search'){
       const dv=s.f[k+'.detail']||[];
-      body+=`<div class="ta-wrap sub"><input class="inp" data-ta="${k}.detail" placeholder="Zoek of typ een airline" autocomplete="off">
-        <div class="ta-list" hidden></div></div>${dv.length?`<div class="tags">${dv.map(o=>`<span class="tag">${esc(o)}<button type="button" data-a="removetag" data-id="${k}.detail" data-v="${esc(o)}" aria-label="Verwijderen">×</button></span>`).join('')}</div>`:''}`;
+      body+=`<div class="ta-wrap sub"><input class="inp" data-ta="${k}.detail" placeholder="Search or type an airline" autocomplete="off">
+        <div class="ta-list" hidden></div></div>${dv.length?`<div class="tags">${dv.map(o=>`<span class="tag">${esc(o)}<button type="button" data-a="removetag" data-id="${k}.detail" data-v="${esc(o)}" aria-label="Remove">×</button></span>`).join('')}</div>`:''}`;
     } else if(f.detail.type==='multi'){
       const dv=s.f[k+'.detail']||[];
       body+=`<div class="opts multi sub" role="group" aria-label="${esc(f.detail.label||f.label)}">${f.detail.options.map(o=>{
         const on=dv.includes(o);
         return `<button data-a="toggledetail" data-id="${k}" data-v="${esc(o)}" aria-pressed="${on}">${esc(o)}</button>`; }).join('')}</div>`;
-      if(f.detail.other && dv.includes(f.detail.other)) body+=`<input class="inp sub" data-k="${k}.detail.other" value="${esc(s.f[k+'.detail.other'])}" placeholder="Specificeer">`;
-    } else body+=`<input class="inp sub" data-k="${k}.detail" value="${esc(s.f[k+'.detail'])}" placeholder="${f.detail.label}, bijv. 06:00-23:00">`;
+      if(f.detail.other && dv.includes(f.detail.other)) body+=`<input class="inp sub" data-k="${k}.detail.other" value="${esc(s.f[k+'.detail.other'])}" placeholder="Please specify">`;
+    } else body+=`<input class="inp sub" data-k="${k}.detail" value="${esc(s.f[k+'.detail'])}" placeholder="${f.detail.label}, e.g. 06:00-23:00">`;
   }
   if(f.hours && v===f.hours.when){
     const kf=`${k}.hoursFrom`, kt=`${k}.hoursTo`, k24=`${k}.hours24`, is24=!!s.f[k24];
     const opts=(sel)=>`<option value="" ${!s.f[sel]?'selected':''}>–</option>`+TIME_SLOTS.map(t=>`<option value="${t}" ${s.f[sel]===t?'selected':''}>${t}</option>`).join('');
     body+=`<div class="sub">
       <label class="check" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <input type="checkbox" data-hours24="${k}" ${is24?'checked':''} style="width:18px;height:18px;margin:0;accent-color:var(--accent)"> Altijd open (24/7)
+        <input type="checkbox" data-hours24="${k24}" ${is24?'checked':''} style="width:18px;height:18px;margin:0;accent-color:var(--accent)"> Always open (24/7)
       </label>
       ${is24?'':`<div class="grid2">
-        <label class="f" style="margin-top:0">Open van<select class="inp" data-k="${kf}">${opts(kf)}</select></label>
-        <label class="f" style="margin-top:0">tot<select class="inp" data-k="${kt}">${opts(kt)}</select></label>
+        <label class="f" style="margin-top:0">Open from<select class="inp" data-k="${kf}">${opts(kf)}</select></label>
+        <label class="f" style="margin-top:0">to<select class="inp" data-k="${kt}">${opts(kt)}</select></label>
       </div>`}
     </div>`;
   }
@@ -638,42 +639,42 @@ function fieldHTML(s,f){
   if(f.id==='cao'){
     const nc=nonCompliantFields(s);
     let msg;
-    if(s.caoAuto===false) msg=`Handmatig ingesteld. <button type="button" class="link" data-a="caoauto">Weer automatisch</button>`;
-    else if(nc.length) msg=`Automatisch op No gezet op basis van ${nc.length} bevinding${nc.length===1?'':'en'}.`;
-    else msg=`Nog geen bevindingen. Tik hierboven op Yes zodra je de survey compliant wilt bevestigen.`;
+    if(s.caoAuto===false) msg=`Manually set. <button type="button" class="link" data-a="caoauto">Back to automatic</button>`;
+    else if(nc.length) msg=`Automatically set to No based on ${nc.length} finding${nc.length===1?'':'s'}.`;
+    else msg=`No findings yet. Tap Yes above once you want to confirm the survey as compliant.`;
     body+=`<p class="hint" style="margin-top:8px">${msg}</p>`;
     if(nc.length) body+=`<ul class="lowlist">${nc.map(nf=>`<li><b>${esc(nf.label)}</b>: ${esc(valueText(s,nf))}${s.notes[nf.id]?' — '+esc(s.notes[nf.id]):''}</li>`).join('')}</ul>`;
   }
   if(f.id==='driveTime'){
     let msg;
-    if(!S.autoDriveTime) msg='Automatisch schatten staat uit (zie Instellingen).';
-    else if(s.driveTimeAuto===false) msg=`Handmatig aangepast. <button type="button" class="link" data-a="drivetimeauto">Automatisch laten berekenen</button>`;
-    else if(s.f.driveTime && s.driveTimeSource==='google') msg='Automatisch berekend via Google Maps, inclusief actueel verkeer.';
-    else if(s.f.driveTime) msg='Automatisch geschat via OpenStreetMap (geen actueel verkeer).'+(s.driveTimeGoogleError?` Google Maps mislukte: <b>${esc(s.driveTimeGoogleError)}</b>.`:' Vul een Google Maps API-sleutel in bij Instellingen voor een schatting mét verkeer.');
-    else msg=S.googleMapsKey ? 'Wordt automatisch berekend via Google Maps zodra adres en city code zijn ingevuld.' : 'Wordt automatisch geschat zodra adres en city code zijn ingevuld.';
+    if(!S.autoDriveTime) msg='Automatic estimation is off (see Settings).';
+    else if(s.driveTimeAuto===false) msg=`Manually adjusted. <button type="button" class="link" data-a="drivetimeauto">Calculate automatically</button>`;
+    else if(s.f.driveTime && s.driveTimeSource==='google') msg='Automatically calculated via Google Maps, including live traffic.';
+    else if(s.f.driveTime) msg='Automatically estimated via OpenStreetMap (no live traffic).'+(s.driveTimeGoogleError?` Google Maps failed: <b>${esc(s.driveTimeGoogleError)}</b>.`:' Add a Google Maps API key in Settings for an estimate with traffic.');
+    else msg=S.googleMapsKey ? 'Will be calculated automatically via Google Maps once the address and city code are filled in.' : 'Will be estimated automatically once the address and city code are filled in.';
     const canRetry=(s.address||'').trim().length>=5 && (s.city||'').trim().length===3;
-    body+=`<p class="hint" style="margin-top:8px">${msg}${canRetry?` <button type="button" class="link" data-a="retrydrivetime">Nu opnieuw proberen</button>`:''}</p>`;
+    body+=`<p class="hint" style="margin-top:8px">${msg}${canRetry?` <button type="button" class="link" data-a="retrydrivetime">Try again now</button>`:''}</p>`;
   }
   if(f.id==='airQualityIndex'){
     let msg;
     const canRetry=(s.address||'').trim().length>=5;
-    if(!S.waqiToken) msg='Vul een gratis WAQI-token in bij Instellingen om dit automatisch op te halen.';
-    else if(!S.autoAirQuality) msg='Automatisch ophalen staat uit (zie Instellingen).';
-    else if(s.airQualityAuto===false) msg=`Handmatig aangepast. <button type="button" class="link" data-a="airqualityauto">Automatisch laten ophalen</button>`;
-    else if(s.f.airQualityIndex) msg='Automatisch opgehaald via WAQI/aqicn.org (gemeten data van het dichtstbijzijnde meetstation).';
-    else if(s.airQualityError) msg=`Geen data gevonden: <b>${esc(String(s.airQualityError))}</b>.`;
-    else msg='Wordt automatisch opgehaald zodra het adres is ingevuld.';
-    body+=`<p class="hint" style="margin-top:8px">${msg}${(canRetry&&S.waqiToken)?` <button type="button" class="link" data-a="retryairquality">Nu opnieuw proberen</button>`:''}</p>`;
+    if(!S.waqiToken) msg='Add a free WAQI token in Settings to fetch this automatically.';
+    else if(!S.autoAirQuality) msg='Automatic fetching is off (see Settings).';
+    else if(s.airQualityAuto===false) msg=`Manually adjusted. <button type="button" class="link" data-a="airqualityauto">Fetch automatically</button>`;
+    else if(s.f.airQualityIndex) msg='Automatically fetched via WAQI/aqicn.org (measured data from the nearest station).';
+    else if(s.airQualityError) msg=`No data found: <b>${esc(String(s.airQualityError))}</b>.`;
+    else msg='Will be fetched automatically once the address is filled in.';
+    body+=`<p class="hint" style="margin-top:8px">${msg}${(canRetry&&S.waqiToken)?` <button type="button" class="link" data-a="retryairquality">Try again now</button>`:''}</p>`;
   }
   const note=s.notes[k], sc=s.scores[k], comp=s.compliance[k];
   const auto = !!note || flagged || sc!=null || !!comp;
   const showNote = noteOverride.has(k) ? noteOverride.get(k) : auto;
   return `<div class="field" data-field="${k}">
-    <div class="field-label"><span>${esc(f.label)}</span>${flagged?'<span class="flagtag">Bevinding</span>':''}</div>
+    <div class="field-label"><span>${esc(f.label)}</span>${flagged?'<span class="flagtag">Finding</span>':''}</div>
     ${body}
     ${showNote?`<div class="fnote">
-        <div class="fnote-head"><button type="button" class="link" data-a="hidenote" data-id="${k}">Opmerking inklappen</button></div>
-        <textarea class="inp note" data-note="${k}" rows="2" placeholder="${flagged?'Wat is er niet in orde?':'Opmerking'}">${esc(note)}</textarea>
+        <div class="fnote-head"><button type="button" class="link" data-a="hidenote" data-id="${k}">Collapse note</button></div>
+        <textarea class="inp note" data-note="${k}" rows="2" placeholder="${flagged?'What is not in order?':'Note'}">${esc(note)}</textarea>
         <div class="fn-row">
           <div class="opts fn-comp">
             <button data-a="pickcompliance" data-id="${k}" data-v="Compliant" aria-pressed="${comp==='Compliant'}">Compliant</button>
@@ -681,13 +682,13 @@ function fieldHTML(s,f){
           </div>
         </div>
       </div>`
-      :`<button class="link" data-a="note" data-id="${k}">+ opmerking</button>`}
+      :`<button class="link" data-a="note" data-id="${k}">+ note</button>`}
   </div>`;
 }
 function photosHTML(s){
   return s.photos.map(p=>`<div class="photo">
-    <div class="photo-img"><img src="${p.data}" alt="Foto"><button data-a="delphoto" data-pid="${p.id}" aria-label="Foto verwijderen">×</button></div>
-    <input class="photo-label" data-photolabel="${p.id}" value="${esc(p.label)}" placeholder="Label, bijv. Breakfast">
+    <div class="photo-img"><img src="${p.data}" alt="Photo"><button data-a="delphoto" data-pid="${p.id}" aria-label="Delete photo">×</button></div>
+    <input class="photo-label" data-photolabel="${p.id}" value="${esc(p.label)}" placeholder="Label, e.g. Breakfast">
   </div>`).join('');
 }
 function refreshPhotosUI(s){
@@ -702,16 +703,16 @@ function dataUrlToFile(dataUrl,filename){
 }
 async function savePhotosToLibrary(s,photos){
   const all=photos||s.photos;
-  if(!all.length){ toast('Nog geen foto\'s om te bewaren.'); return; }
+  if(!all.length){ toast('No photos to save yet.'); return; }
   const list=all.filter(p=>!p.savedToLibrary);
-  if(!list.length){ toast('Deze foto\'s zijn al bewaard in de fotobibliotheek.'); return; }
-  const files=list.map((p,i)=>dataUrlToFile(p.data,`${(p.label||'foto').replace(/[^a-z0-9]+/gi,'-')||'foto-'+(i+1)}.jpg`));
+  if(!list.length){ toast('These photos are already saved to the photo library.'); return; }
+  const files=list.map((p,i)=>dataUrlToFile(p.data,`${(p.label||'photo').replace(/[^a-z0-9]+/gi,'-')||'photo-'+(i+1)}.jpg`));
   if(navigator.canShare?.({files})){
     try{ await shareGuard({files}); list.forEach(p=>p.savedToLibrary=true); touch(s); }
-    catch(e){ if(e.name!=='AbortError') toast(`Bewaren is niet gelukt (${e.name||'fout'}: ${e.message||e}).`); }
+    catch(e){ if(e.name!=='AbortError') toast(`Saving failed (${e.name||'error'}: ${e.message||e}).`); }
     return;
   }
-  toast('Delen van foto\'s wordt hier niet ondersteund (canShare gaf nee).');
+  toast('Sharing photos is not supported here (canShare said no).');
 }
 
 /* ---------- Driving time to airport (best-effort, via OpenStreetMap/OSRM) ---------- */
@@ -871,8 +872,8 @@ async function tryFetchDriveTime(s){
     if(S.googleMapsKey){
       if(await loadGoogleMaps()){
         const g=await googleDrivingSeconds(hotelLoc,{lat:airport.lat,lon:airport.lon});
-        if(g.seconds!=null){ dur=g.seconds; viaGoogle=true; } else { s.driveTimeGoogleError=g.status||'onbekende fout'; }
-      } else s.driveTimeGoogleError='kon de Google Maps-bibliotheek niet laden (controleer de sleutel)';
+        if(g.seconds!=null){ dur=g.seconds; viaGoogle=true; } else { s.driveTimeGoogleError=g.status||'unknown error'; }
+      } else s.driveTimeGoogleError='could not load the Google Maps library (check the key)';
     }
     if(dur==null){
       const res=await fetch(`https://router.project-osrm.org/route/v1/driving/${hotelLoc.lon},${hotelLoc.lat};${airport.lon},${airport.lat}?overview=false`);
@@ -886,7 +887,7 @@ async function tryFetchDriveTime(s){
     s.driveTimeSource=viaGoogle?'google':'osrm';
     touch(s);
     if(view.name==='edit'&&view.id===s.id) rerenderField(s,'driveTime');
-  }catch(e){ /* stil negeren: geen internet, geen match, of de route-dienst antwoordt niet */ }
+  }catch(e){ /* silently ignore: no internet, no match, or the routing service doesn't respond */ }
 }
 
 /* ---------- Air quality at destination (best-effort, via WAQI/aqicn.org) ---------- */
@@ -918,7 +919,7 @@ async function tryFetchAirQuality(s){
     s.airQualityError=null;
     touch(s);
     if(view.name==='edit'&&view.id===s.id) rerenderField(s,'airQualityIndex');
-  }catch(e){ /* stil negeren */ }
+  }catch(e){ /* silently ignore */ }
 }
 
 function rerenderField(s,id){ const row=document.querySelector(`[data-field="${id}"]`); if(!row) return;
@@ -926,122 +927,122 @@ function rerenderField(s,id){ const row=document.querySelector(`[data-field="${i
 function refreshStats(){
   const s=cur(); if(!s||view.name!=='edit') return; const v=verdict(s);
   const st=$('#ovStamp'); st.dataset.s=v.k; st.textContent=v.t; $('#ovWord').textContent=v.w;
-  $('#progTxt').textContent=`${doneCount(s)} van ${TOTAL} punten ingevuld`;
+  $('#progTxt').textContent=`${doneCount(s)} of ${TOTAL} items filled in`;
   $('#progBar').style.width=doneCount(s)/TOTAL*100+'%';
   $('#chips').innerHTML=chipsHTML(s);
   SECTIONS.forEach(sec=>{ const el=document.querySelector(`[data-meta="${sec.id}"]`); if(el) el.innerHTML=metaHTML(s,sec); });
   setDock(editDockHTML(s));
   if(doneCount(s)===TOTAL && !s.backupPrompted){
     s.backupPrompted=true; persist();
-    if(confirm('Survey afgerond! Back-up maken naar iCloud Drive (of Bestanden)?')) exportAll();
+    if(confirm('Survey complete! Save a backup to iCloud Drive (or Files)?')) exportAll();
   }
 }
 
 function renderReport(){
   const s=cur(); if(!s){view={name:'home'};return render();}
-  setBar(`<button class="icon-btn" data-a="back-edit" aria-label="Terug naar survey">←</button><h1>Rapport</h1>`);
+  setBar(`<button class="icon-btn" data-a="back-edit" aria-label="Back to survey">←</button><h1>Report</h1>`);
   const v=verdict(s), fl=flags(s), avg=avgScore(s);
   if(!s.recip) s.recip={groups:[],extra:''};
   const groups = S.groups.length ? S.groups.map(g=>`
     <label class="check"><input type="checkbox" data-grp="${g.id}" ${s.recip.groups.includes(g.id)?'checked':''}>
-      <span><b>${esc(g.name||'Naamloze groep')}</b><small>${esc(g.to)}${g.cc?' | cc: '+esc(g.cc):''}</small></span></label>`).join('')
-    : `<p class="hint">Nog geen vaste ontvangers. <button class="link" data-a="settings">Groep toevoegen</button></p>`;
-  const missing = ALL.filter(f=>!filled(s,f));
+      <span><b>${esc(g.name||'Unnamed group')}</b><small>${esc(g.to)}${g.cc?' | cc: '+esc(g.cc):''}</small></span></label>`).join('')
+    : `<p class="hint">No saved recipients yet. <button class="link" data-a="settings">Add group</button></p>`;
+  const missing = reqFields(ALL).filter(f=>!filled(s,f));
   $('#app').innerHTML = `
     <section class="panel">
       <div class="summary"><span class="stamp big" data-s="${v.k}">${v.t}</span>
       <div class="txt"><b>${esc(title(s))}</b><p class="hint">${esc([s.city,dateNL(s.date),s.reps,s.inspector].filter(Boolean).join(', '))}</p>
-      <p class="hint">${v.w} · ${doneCount(s)} van ${TOTAL} punten ingevuld${avg!=null?` · Gem. score ${avg.toFixed(1)}/10`:''}</p></div></div>
+      <p class="hint">${v.w} · ${doneCount(s)} of ${TOTAL} items filled in${avg!=null?` · Avg. score ${avg.toFixed(1)}/10`:''}</p></div></div>
       <div class="bars">${SECTIONS.map(sec=>{const d=doneCount(s,sec.fields),n=sec.fields.filter(f=>isFlag(s,f)).length,cv=sectionCompliance(s,sec);
-        return `<div class="barrow"><span>${sec.name}</span><span class="track"><i style="width:${d/sec.fields.length*100}%;background:${n?'var(--s2)':'var(--accent)'}"></i></span><b style="color:${cv==='Non-compliant'?'var(--s1)':cv==='Compliant'?'var(--s5)':'var(--muted)'}">${cv==='Not assessed'?d+'/'+sec.fields.length:cv}</b></div>`}).join('')}</div>
+        return `<div class="barrow"><span>${sec.name}</span><span class="track"><i style="width:${d/reqFields(sec.fields).length*100}%;background:${n?'var(--s2)':'var(--accent)'}"></i></span><b style="color:${cv==='Non-compliant'?'var(--s1)':cv==='Compliant'?'var(--s5)':'var(--muted)'}">${cv==='Not assessed'?d+'/'+reqFields(sec.fields).length:cv}</b></div>`}).join('')}</div>
     </section>
-    <section class="panel"><h2>Bevindingen</h2>
-      ${fl.length?`<ul class="lowlist">${fl.map(f=>`<li><b>${esc(f.label)}</b>: ${esc(valueText(s,f))}${s.notes[f.id]?' - '+esc(s.notes[f.id]):''}</li>`).join('')}</ul>`:'<p class="hint">Geen bevindingen.</p>'}
-      ${missing.length?`<p class="hint" style="margin-top:12px">Nog leeg: ${esc(missing.map(f=>f.label).join(', '))}</p>`:''}
+    <section class="panel"><h2>Findings</h2>
+      ${fl.length?`<ul class="lowlist">${fl.map(f=>`<li><b>${esc(f.label)}</b>: ${esc(valueText(s,f))}${s.notes[f.id]?' - '+esc(s.notes[f.id]):''}</li>`).join('')}</ul>`:'<p class="hint">No findings.</p>'}
+      ${missing.length?`<p class="hint" style="margin-top:12px">Still empty: ${esc(missing.map(f=>f.label).join(', '))}</p>`:''}
     </section>
     <section class="panel">
-      <h2>Ontvangers</h2>
+      <h2>Recipients</h2>
       ${groups}
-      <label class="f">Extra adressen (komma gescheiden)<input data-top="extra" value="${esc(s.recip.extra)}" type="email" multiple placeholder="naam@voorbeeld.nl"></label>
+      <label class="f">Extra addresses (comma separated)<input data-top="extra" value="${esc(s.recip.extra)}" type="email" multiple placeholder="name@example.com"></label>
     </section>
     <section class="panel">
-      <h2>Versturen</h2>
-      <p class="hint" style="margin-bottom:12px">Het rapport en de mailtekst zijn in het Engels, net als de checklist.<br><br>
-      <b>Aanbevolen:</b> stap 1, sla de PDF op. Stap 2, stel de mail op - ontvangers, cc en onderwerp staan dan al klaar, jij voegt alleen de opgeslagen PDF nog toe als bijlage.<br><br>
-      <b>Delen met PDF</b> is een alternatief dat de PDF direct meestuurt, maar dan moet je de ontvangers (staan op je klembord) en het onderwerp zelf plakken of typen.</p>
+      <h2>Send</h2>
+      <p class="hint" style="margin-bottom:12px">The report and mail text are in English, like the checklist.<br><br>
+      <b>Recommended:</b> step 1, save the PDF. Step 2, compose the mail - recipients, cc and subject are already filled in, you just add the saved PDF as an attachment.<br><br>
+      <b>Share with PDF</b> is an alternative that sends the PDF directly, but then you need to paste or type the recipients (on your clipboard) and subject yourself.</p>
       <div class="actions">
-        <button class="btn" data-a="savepdf">1. PDF opslaan</button>
-        <button class="btn primary" data-a="mail">2. Mail opstellen</button>
-        <button class="btn" data-a="share">Delen met PDF</button>
-        <button class="btn" data-a="saveword">Word-document opslaan (bewerkbaar)</button>
-        <button class="btn" data-a="marksent">${s.status==='verzonden'?'Terugzetten naar concept':'Markeer als verzonden'}</button>
+        <button class="btn" data-a="savepdf">1. Save PDF</button>
+        <button class="btn primary" data-a="mail">2. Compose mail</button>
+        <button class="btn" data-a="share">Share with PDF</button>
+        <button class="btn" data-a="saveword">Save Word document (editable)</button>
+        <button class="btn" data-a="marksent">${s.status==='verzonden'?'Revert to draft':'Mark as sent'}</button>
       </div>
     </section>`;
   setDock('');
 }
 
 function renderSettings(){
-  setBar(`<button class="icon-btn" data-a="home" aria-label="Terug">←</button><h1>Instellingen</h1>`);
+  setBar(`<button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>Settings</h1>`);
   $('#app').innerHTML = `
-    <section class="panel"><h2>Jouw naam</h2>
-      <label class="f">Standaard Hodaco Rep in nieuwe surveys<input data-set="defRep" value="${esc(S.defaultRep)}"></label></section>
-    <section class="panel"><h2>Hoteladres</h2>
+    <section class="panel"><h2>Your name</h2>
+      <label class="f">Default Hodaco Rep in new surveys<input data-set="defRep" value="${esc(S.defaultRep)}"></label></section>
+    <section class="panel"><h2>Hotel address</h2>
       <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
         <input type="checkbox" data-set="autoAddress" ${S.autoAddress?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
-        <span style="color:var(--ink)">Hotel-suggesties tonen tijdens typen</span>
+        <span style="color:var(--ink)">Show hotel suggestions while typing</span>
       </label>
-      <p class="hint" style="margin-top:8px">Toont bij het intypen van de hotelnaam (via OpenStreetMap) een lijst met mogelijke hotels om uit te kiezen; kies je er één, dan vult het adres automatisch in. Werkt alleen met internetverbinding.</p>
+      <p class="hint" style="margin-top:8px">Shows a list of possible hotels (via OpenStreetMap) as you type the hotel name; pick one and the address fills in automatically. Only works with an internet connection.</p>
     </section>
-    <section class="panel"><h2>Foto's</h2>
+    <section class="panel"><h2>Photos</h2>
       <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
         <input type="checkbox" data-set="autoSavePhotos" ${S.autoSavePhotos?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
-        <span style="color:var(--ink)">Direct na elke foto het deelvenster openen om 'm in de fotobibliotheek te bewaren</span>
+        <span style="color:var(--ink)">Open the share sheet right after each photo to save it to the photo library</span>
       </label>
-      <p class="hint" style="margin-top:8px">Je moet in dat deelvenster nog wel zelf op "Bewaar afbeelding" tikken — dat kan iOS niet geruisloos vanuit een website. Staat dit uit, dan kun je foto's nog altijd zelf bewaren via de knop onder de foto's in een survey.</p>
+      <p class="hint" style="margin-top:8px">You'll still need to tap "Save Image" in that share sheet yourself — iOS won't allow a website to do that silently. If this is off, you can still save photos yourself using the button under the photos in a survey.</p>
     </section>
-    <section class="panel"><h2>Rijtijd naar luchthaven</h2>
+    <section class="panel"><h2>Drive time to airport</h2>
       <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
         <input type="checkbox" data-set="autoDriveTime" ${S.autoDriveTime?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
-        <span style="color:var(--ink)">Automatisch rijtijd naar de luchthaven schatten via internet</span>
+        <span style="color:var(--ink)">Automatically estimate drive time to the airport via the internet</span>
       </label>
-      <p class="hint" style="margin-top:8px">Gebruikt het adres en de city code om via OpenStreetMap een schatting te maken (geen actueel verkeer). Dit is een gratis publieke dienst zonder garanties — kan af en toe leeg blijven, traag zijn of net niet kloppen. Je kunt de uitkomst altijd zelf overschrijven.</p>
+      <p class="hint" style="margin-top:8px">Uses the address and city code to make an estimate via OpenStreetMap (no live traffic). This is a free public service with no guarantees — it can occasionally stay empty, be slow, or be slightly off. You can always overwrite the result yourself.</p>
       ${advancedUnlocked?`
-      <label class="f">Google Maps API-sleutel (optioneel)<input type="password" data-set="googleMapsKey" value="${esc(S.googleMapsKey)}" autocomplete="off" placeholder="Plak hier je sleutel"></label>
-      <p class="hint" style="margin-top:8px">Vul je hier een sleutel in, dan gebruikt de app Google in plaats van de gratis basisdiensten: rijtijd mét actueel verkeer, en een veel betere hotel-zoekfunctie/adresherkenning (bijv. in regio's waar OpenStreetMap weinig data heeft). Zelf een sleutel maken:</p>
+      <label class="f">Google Maps API key (optional)<input type="password" data-set="googleMapsKey" value="${esc(S.googleMapsKey)}" autocomplete="off" placeholder="Paste your key here"></label>
+      <p class="hint" style="margin-top:8px">Add a key here and the app will use Google instead of the free basic services: drive time with live traffic, and much better hotel search/address recognition (e.g. in regions where OpenStreetMap has little data). To create your own key:</p>
       <ol class="hint" style="margin:6px 0 0;padding-left:18px">
-        <li>Ga naar console.cloud.google.com en maak een project aan (of gebruik een bestaand project).</li>
-        <li>Koppel een facturatieaccount (Billing) — verplicht, maar je gratis maandelijkse tegoed dekt dit gebruik ruimschoots.</li>
-        <li>Ga naar "APIs & Services &gt; Library" en schakel "Maps JavaScript API", "Directions API", "Places API" én "Geocoding API" in.</li>
-        <li>Ga naar "APIs & Services &gt; Credentials &gt; Create Credentials &gt; API key".</li>
-        <li>Open de nieuwe sleutel: zet bij "Application restrictions" &gt; "Websites" het adres <code>rolandwitkamp.github.io/*</code>, en bij "API restrictions" alle vier de APIs hierboven aan.</li>
-        <li>Kopieer de sleutel en plak 'm hier.</li>
+        <li>Go to console.cloud.google.com and create a project (or use an existing one).</li>
+        <li>Link a billing account — required, but your free monthly credit covers this usage comfortably.</li>
+        <li>Go to "APIs & Services &gt; Library" and enable "Maps JavaScript API", "Directions API", "Places API" and "Geocoding API".</li>
+        <li>Go to "APIs & Services &gt; Credentials &gt; Create Credentials &gt; API key".</li>
+        <li>Open the new key: under "Application restrictions" &gt; "Websites" set the address <code>rolandwitkamp.github.io/*</code>, and under "API restrictions" enable all four APIs above.</li>
+        <li>Copy the key and paste it here.</li>
       </ol>
-      <p class="hint" style="margin-top:8px">Had je al een sleutel voor de rijtijd? Ga dan terug naar Credentials, open je bestaande sleutel, en vink bij "API restrictions" ook "Places API" en "Geocoding API" aan.</p>
-      <p class="hint" style="margin-top:8px">Na het opslaan of wijzigen van de sleutel moet je de app eenmalig volledig afsluiten en heropenen.</p>`:''}
+      <p class="hint" style="margin-top:8px">Already had a key for drive time? Go back to Credentials, open your existing key, and also enable "Places API" and "Geocoding API" under "API restrictions".</p>
+      <p class="hint" style="margin-top:8px">After saving or changing the key you need to fully close and reopen the app once.</p>`:''}
     </section>
-    <section class="panel"><h2>Luchtkwaliteit bestemming</h2>
+    <section class="panel"><h2>Destination air quality</h2>
       <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
         <input type="checkbox" data-set="autoAirQuality" ${S.autoAirQuality?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
-        <span style="color:var(--ink)">Automatisch luchtkwaliteit ophalen via internet</span>
+        <span style="color:var(--ink)">Automatically fetch air quality via the internet</span>
       </label>
-      <p class="hint" style="margin-top:8px">Haalt bij het invullen van het adres de gemeten luchtkwaliteit (AQI) op via het gratis platform WAQI/aqicn.org.</p>
+      <p class="hint" style="margin-top:8px">Fetches the measured air quality (AQI) via the free WAQI/aqicn.org platform once the address is filled in.</p>
       ${advancedUnlocked?`
-      <label class="f">WAQI-token (gratis)<input type="password" data-set="waqiToken" value="${esc(S.waqiToken)}" autocomplete="off" placeholder="Plak hier je token"></label>
-      <p class="hint" style="margin-top:8px">Gratis token aanvragen: ga naar <b>aqicn.org/data-platform/token/</b>, vul je e-mailadres in, en je ontvangt direct een token per mail. Geen creditcard of facturering nodig. Plak de token hierboven.</p>`:''}
+      <label class="f">WAQI token (free)<input type="password" data-set="waqiToken" value="${esc(S.waqiToken)}" autocomplete="off" placeholder="Paste your token here"></label>
+      <p class="hint" style="margin-top:8px">Request a free token: go to <b>aqicn.org/data-platform/token/</b>, enter your email address, and you'll receive a token by email right away. No credit card or billing needed. Paste the token above.</p>`:''}
     </section>
-    <section class="panel"><h2>Vaste ontvangers</h2>
-      <p class="hint">Maak groepen, bijvoorbeeld per station of afdeling. Meerdere adressen scheid je met een komma.</p>
+    <section class="panel"><h2>Saved recipients</h2>
+      <p class="hint">Create groups, e.g. per station or department. Separate multiple addresses with a comma.</p>
       ${S.groups.map(g=>`<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:4px">
-        <label class="f">Naam groep<input data-set="gname" data-gid="${g.id}" value="${esc(g.name)}" placeholder="Bijv. Hotel desk"></label>
-        <label class="f">Aan<input data-set="gto" data-gid="${g.id}" value="${esc(g.to)}" type="email" multiple></label>
+        <label class="f">Group name<input data-set="gname" data-gid="${g.id}" value="${esc(g.name)}" placeholder="E.g. Hotel desk"></label>
+        <label class="f">To<input data-set="gto" data-gid="${g.id}" value="${esc(g.to)}" type="email" multiple></label>
         <label class="f">Cc<input data-set="gcc" data-gid="${g.id}" value="${esc(g.cc)}" type="email" multiple></label>
-        <button class="link" style="color:var(--s1);margin-top:8px" data-a="delgroup" data-gid="${g.id}">Groep verwijderen</button></div>`).join('')}
-      <button class="btn wide" style="margin-top:16px" data-a="addgroup">Groep toevoegen</button></section>
-    <section class="panel"><h2>Back-up</h2><p class="hint">Surveys staan alleen op dit apparaat. Exporteer ze af en toe. Tip: tik bij exporteren op AirDrop om snel over te zetten naar je andere iPhone of iPad.</p>
-      <button class="btn wide" style="margin-top:12px" data-a="export">Alles exporteren (JSON)</button>
-      <label class="btn wide" style="margin-top:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">Back-up terugzetten<input type="file" accept="application/json,.json" data-import style="position:absolute;width:1px;height:1px;opacity:0"></label>
-      <p class="hint" style="margin-top:10px">Terugzetten voegt surveys toe en overschrijft surveys met hetzelfde ID. Zo kun je ook surveys van een collega inladen.</p></section>
-    <button type="button" data-a="versiontap" class="hint" style="display:block;width:100%;text-align:center;border:0;background:none">Versie ${APP_VERSION}${navigator.onLine?'':' · offline'}</button>`;
+        <button class="link" style="color:var(--s1);margin-top:8px" data-a="delgroup" data-gid="${g.id}">Delete group</button></div>`).join('')}
+      <button class="btn wide" style="margin-top:16px" data-a="addgroup">Add group</button></section>
+    <section class="panel"><h2>Backup</h2><p class="hint">Surveys are only stored on this device. Export them from time to time. Tip: tap AirDrop when exporting to quickly transfer to your other iPhone or iPad.</p>
+      <button class="btn wide" style="margin-top:12px" data-a="export">Export all (JSON)</button>
+      <label class="btn wide" style="margin-top:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">Restore backup<input type="file" accept="application/json,.json" data-import style="position:absolute;width:1px;height:1px;opacity:0"></label>
+      <p class="hint" style="margin-top:10px">Restoring adds surveys and overwrites surveys with the same ID. This also lets you load surveys from a colleague.</p></section>
+    <button type="button" data-a="versiontap" class="hint" style="display:block;width:100%;text-align:center;border:0;background:none">Version ${APP_VERSION}${navigator.onLine?'':' · offline'}</button>`;
   setDock('');
 }
 
@@ -1163,7 +1164,7 @@ const DOC_HTML = `
 `;
 
 function renderDocs(){
-  setBar(`<button class="icon-btn" data-a="docsback" aria-label="Terug">←</button><h1>Werkafspraken Hodaco</h1>`);
+  setBar(`<button class="icon-btn" data-a="docsback" aria-label="Back">←</button><h1>Hodaco Policy Document</h1>`);
   $('#app').innerHTML = DOC_HTML;
   setDock('');
 }
@@ -1227,10 +1228,10 @@ document.addEventListener('click', async e=>{
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
   }
   else if(a==='open'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'edit',id:b.dataset.id}; render(); }
-  else if(a==='swipedelete'){ const sv=S.surveys.find(x=>x.id===b.dataset.id); if(sv && confirm(`Survey "${title(sv)}" verwijderen?`)){ S.surveys=S.surveys.filter(x=>x.id!==sv.id); persist(); render(); toast('Survey verwijderd'); } else closeSwipes(); }
+  else if(a==='swipedelete'){ const sv=S.surveys.find(x=>x.id===b.dataset.id); if(sv && confirm(`Delete survey "${title(sv)}"?`)){ S.surveys=S.surveys.filter(x=>x.id!==sv.id); persist(); render(); toast('Survey deleted'); } else closeSwipes(); }
   else if(a==='report'){view={name:'report',id:s.id};render();}
   else if(a==='back-edit'){view={name:'edit',id:s.id};render();}
-  else if(a==='delete'){ if(confirm(`Survey "${title(s)}" verwijderen?`)){ S.surveys=S.surveys.filter(x=>x.id!==s.id); persist(); view={name:'home'}; render(); toast('Survey verwijderd'); } }
+  else if(a==='delete'){ if(confirm(`Delete survey "${title(s)}"?`)){ S.surveys=S.surveys.filter(x=>x.id!==s.id); persist(); view={name:'home'}; render(); toast('Survey deleted'); } }
   else if(a==='sharesurvey') exportSurvey(s);
   else if(a==='pick'){ const id=b.dataset.id, v=b.dataset.v; if(id==='cao') s.caoAuto=false; s.f[id] = s.f[id]===v?undefined:v; if(s.f[id]===undefined) delete s.f[id]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='caoauto'){ s.caoAuto=true; touch(s); rerenderField(s,'cao'); refreshStats(); }
@@ -1280,7 +1281,7 @@ document.addEventListener('click', async e=>{
   else if(a==='savephotos'){ savePhotosToLibrary(s); }
   else if(a==='addgroup'){ S.groups.push({id:uid(),name:'',to:'',cc:''}); persist(); render(); }
   else if(a==='delgroup'){ S.groups=S.groups.filter(g=>g.id!==b.dataset.gid); persist(); render(); }
-  else if(a==='marksent'){ s.status = s.status==='verzonden'?'concept':'verzonden'; touch(s); render(); toast(s.status==='verzonden'?'Gemarkeerd als verzonden':'Teruggezet naar concept'); }
+  else if(a==='marksent'){ s.status = s.status==='verzonden'?'concept':'verzonden'; touch(s); render(); toast(s.status==='verzonden'?'Marked as sent':'Reverted to draft'); }
   else if(a==='mail') openMail(s);
   else if(a==='share') sharePdf(s);
   else if(a==='savepdf') savePdf(s);
@@ -1291,7 +1292,7 @@ document.addEventListener('click', async e=>{
   else if(a==='versiontap'){
     clearTimeout(versionTapTimer); versionTaps++;
     versionTapTimer=setTimeout(()=>{ versionTaps=0; },1500);
-    if(versionTaps>=7){ versionTaps=0; advancedUnlocked=true; toast('Geavanceerde instellingen ontgrendeld'); render(); }
+    if(versionTaps>=7){ versionTaps=0; advancedUnlocked=true; toast('Advanced settings unlocked'); render(); }
   }
 });
 document.addEventListener('input', e=>{
@@ -1337,8 +1338,8 @@ document.addEventListener('change', async e=>{
     try{ const d=JSON.parse(await el.files[0].text()); if(!Array.isArray(d.surveys)) throw 0;
       let n=0; d.surveys.forEach(x=>{ if(!x?.id||!x.f) return; const i=S.surveys.findIndex(y=>y.id===x.id); if(i>=0) S.surveys[i]=x; else S.surveys.push(x); n++; });
       (d.groups||[]).forEach(g=>{ if(g?.id && !S.groups.some(y=>y.id===g.id)) S.groups.push(g); });
-      persist(); toast(`${n} survey${n===1?'':'s'} teruggezet`); render();
-    }catch(err){ toast('Dit bestand is geen back-up van Pillow Report.'); }
+      persist(); toast(`${n} survey${n===1?'':'s'} restored`); render();
+    }catch(err){ toast('This file is not a Pillow Report backup.'); }
     el.value=''; return;
   }
   if(el.dataset.set==='autoDriveTime'){ S.autoDriveTime=el.checked; persist(); }
@@ -1351,10 +1352,10 @@ document.addEventListener('change', async e=>{
     const defLabel=el.dataset.photoLabel||'';
     const rawFiles=[...el.files];
     const shareP=(S.autoSavePhotos && navigator.canShare?.({files:rawFiles}))
-      ? shareGuard({files:rawFiles}).then(()=>true).catch(e=>{ if(e.name!=='AbortError') toast(`Bewaren is niet gelukt (${e.name||'fout'}: ${e.message||e}).`); return false; })
+      ? shareGuard({files:rawFiles}).then(()=>true).catch(e=>{ if(e.name!=='AbortError') toast(`Saving failed (${e.name||'error'}: ${e.message||e}).`); return false; })
       : Promise.resolve(false);
     const added=[];
-    for(const file of el.files){ try{ const p=await compress(file); const ph={id:uid(),label:defLabel,...p}; s.photos.push(ph); added.push(ph); }catch(err){ toast('Foto kon niet worden gelezen. Probeer een JPG of PNG.'); } }
+    for(const file of el.files){ try{ const p=await compress(file); const ph={id:uid(),label:defLabel,...p}; s.photos.push(ph); added.push(ph); }catch(err){ toast('Could not read photo. Try a JPG or PNG.'); } }
     el.value=''; touch(s);
     refreshPhotosUI(s);
     if(await shareP){ added.forEach(p=>p.savedToLibrary=true); touch(s); }
@@ -1398,10 +1399,10 @@ function mailBody(s){
 }
 function openMail(s){
   const {to,cc}=recipients(s);
-  if(!to.length) return toast('Kies eerst een ontvangersgroep of vul een adres in.');
+  if(!to.length) return toast('Choose a recipient group or add an address first.');
   const q=[`subject=${encodeURIComponent(subject(s))}`,`body=${encodeURIComponent(mailBody(s))}`]; if(cc.length) q.unshift(`cc=${encodeURIComponent(cc.join(','))}`);
   const a=document.createElement('a'); a.href=`mailto:${to.map(encodeURIComponent).join(',')}?${q.join('&')}`; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove();
-  toast('Mail geopend. Voeg de opgeslagen PDF zelf toe als bijlage.');
+  toast('Mail opened. Add the saved PDF as an attachment yourself.');
 }
 
 /* ---------- PDF (mirrors the checklist layout) ---------- */
@@ -1455,7 +1456,7 @@ function makePdf(s){
     s.photos.forEach(p=>{ let w=colW,h=w*p.h/p.w; if(h>75){h=75;w=h*p.w/p.h;}
       if(col===0) ensure(h+9); const x=M+col*(colW+6);
       try{ doc.addImage(p.data,'JPEG',x,y,w,h); }catch(e){}
-      setF(8,'normal',MUTED); doc.text(p.label||'Foto',x,y+h+4);
+      setF(8,'normal',MUTED); doc.text(p.label||'Photo',x,y+h+4);
       rowH=Math.max(rowH,h+9); if(col===1){y+=rowH;rowH=0;col=0;} else col=1; });
   }
   const n=doc.getNumberOfPages();
@@ -1466,24 +1467,24 @@ function makePdf(s){
 const pdfName = s=>`Pillow Report ${title(s).replace(/[\\/:*?"<>|]/g,'')} ${s.city||''} ${s.date||''}.pdf`.replace(/\s+/g,' ');
 
 async function sharePdf(s){
-  let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
+  let blob; try{ blob=makePdf(s); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
   const file=new File([blob],pdfName(s),{type:'application/pdf'});
   const {to,cc}=recipients(s);
   if(to.length){ try{ await navigator.clipboard.writeText([...to,...cc].join(', ')); }catch(e){} }
   if(navigator.canShare && navigator.canShare({files:[file]})){
     try{ await shareGuard({files:[file],title:subject(s),text:mailBody(s)});
-      s.status='verzonden'; touch(s); renderReport(); toast(to.length?'Gedeeld. Ontvangers staan op je klembord.':'Gedeeld.');
-    }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
-  } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
+      s.status='verzonden'; touch(s); renderReport(); toast(to.length?'Shared. Recipients are on your clipboard.':'Shared.');
+    }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
+  } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.34.0';
+const APP_VERSION='1.35.0';
 let downloads=null;
 async function savePdf(s){
-  let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
-  if(downloads){ try{ await downloads.save({filename:pdfName(s),data:blob}); toast('PDF opgeslagen'); }catch(e){ if(e?.code!=='declined') toast('Opslaan lukt hier niet. Gebruik Delen met PDF.'); } return; }
+  let blob; try{ blob=makePdf(s); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
+  if(downloads){ try{ await downloads.save({filename:pdfName(s),data:blob}); toast('PDF saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here. Use Share with PDF instead.'); } return; }
   const file=new File([blob],pdfName(s),{type:'application/pdf'});
   if(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)){
-    // iOS: bewaren via het deelmenu (Bewaar in Bestanden) is betrouwbaarder dan een download
+    // iOS: saving via the share sheet (Save to Files) is more reliable than a download
     if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); }catch(e){} return; }
   }
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=pdfName(s); document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
@@ -1500,7 +1501,7 @@ function makeWordHtml(s){
     const cc=cv==='Non-compliant'?'#C2413B':cv==='Compliant'?'#1F7A5C':'#5B6B80';
     return `<h2 style="color:#13233A;font-family:Calibri,Arial,sans-serif;font-size:14pt;">${esc(sec.name)} <span style="font-size:11pt;font-weight:normal;color:${cc}">(${esc(cv)})</span></h2>
       <table style="border-collapse:collapse;width:100%;font-family:Calibri,Arial,sans-serif;font-size:10.5pt;margin-bottom:18px;">${sec.fields.map(row).join('')}</table>`; }).join('');
-  const findings = fl.length ? `<ul>${fl.map(f=>`<li><b>${esc(f.label)}</b>: ${esc(valueText(s,f))}${s.notes[f.id]?' — '+esc(s.notes[f.id]):''}</li>`).join('')}</ul>` : '<p>Geen bevindingen.</p>';
+  const findings = fl.length ? `<ul>${fl.map(f=>`<li><b>${esc(f.label)}</b>: ${esc(valueText(s,f))}${s.notes[f.id]?' — '+esc(s.notes[f.id]):''}</li>`).join('')}</ul>` : '<p>No findings.</p>';
   const other = nonEmpty(s.f.otherInfo) ? `<h2 style="font-family:Calibri,Arial,sans-serif;">Other information</h2><p style="font-family:Calibri,Arial,sans-serif;">${esc(s.f.otherInfo).replace(/\n/g,'<br>')}</p>` : '';
   return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
 <head><meta charset="utf-8"><title>${esc(title(s))}</title>
@@ -1509,7 +1510,7 @@ function makeWordHtml(s){
 <body style="font-family:Calibri,Arial,sans-serif;">
 <h1 style="color:#13233A;">${esc(title(s))}</h1>
 <p>${esc([s.city,dateNL(s.date),s.reps,s.inspector].filter(Boolean).join(', '))}</p>
-<p><b>CAO compliant:</b> ${esc(caoText(s))} &nbsp;|&nbsp; <b>${fl.length}</b> finding${fl.length===1?'':'s'}${avg!=null?` &nbsp;|&nbsp; <b>Gemiddelde score:</b> ${avg.toFixed(1)}/10`:''}</p>
+<p><b>CAO compliant:</b> ${esc(caoText(s))} &nbsp;|&nbsp; <b>${fl.length}</b> finding${fl.length===1?'':'s'}${avg!=null?` &nbsp;|&nbsp; <b>Average score:</b> ${avg.toFixed(1)}/10`:''}</p>
 <h2 style="font-family:Calibri,Arial,sans-serif;">Findings</h2>
 ${findings}
 ${sections}
@@ -1519,7 +1520,7 @@ ${other}
 }
 async function saveWord(s){
   const blob=new Blob(['﻿'+makeWordHtml(s)],{type:'application/msword'});
-  if(downloads){ try{ await downloads.save({filename:wordName(s),data:blob}); toast('Word-bestand opgeslagen'); }catch(e){ if(e?.code!=='declined') toast('Opslaan lukt hier niet. Gebruik Delen.'); } return; }
+  if(downloads){ try{ await downloads.save({filename:wordName(s),data:blob}); toast('Word document saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here. Use Share instead.'); } return; }
   const file=new File([blob],wordName(s),{type:'application/msword'});
   if(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)){
     if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); }catch(e){} return; }
@@ -1529,14 +1530,14 @@ async function saveWord(s){
 async function exportSurvey(s){
   const name=`Survey ${title(s).replace(/[\\/:*?"<>|]/g,'')} ${s.city||''} ${s.date||''}.json`.replace(/\s+/g,' ');
   const data=JSON.stringify({surveys:[s],groups:[]},null,1);
-  if(downloads){ try{ await downloads.save({filename:name,data}); toast('Survey opgeslagen'); }catch(e){ if(e?.code!=='declined') toast('Opslaan lukt hier niet.'); } return; }
+  if(downloads){ try{ await downloads.save({filename:name,data}); toast('Survey saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here.'); } return; }
   const file=new File([data],name,{type:'application/json'});
   if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file],title:name}); return; }catch(e){ if(e.name==='AbortError') return; } }
   const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=file.name; document.body.appendChild(a); a.click(); a.remove();
 }
 async function exportAll(){
   const data=JSON.stringify({surveys:S.surveys,groups:S.groups,defaultRep:S.defaultRep},null,1);
-  if(downloads){ try{ await downloads.save({filename:`hotel-surveys-${today()}.json`,data}); toast('Export opgeslagen'); }catch(e){ if(e?.code!=='declined') toast('Exporteren lukt hier niet.'); } return; }
+  if(downloads){ try{ await downloads.save({filename:`hotel-surveys-${today()}.json`,data}); toast('Export saved'); }catch(e){ if(e?.code!=='declined') toast('Exporting does not work here.'); } return; }
   const file=new File([data],`hotel-surveys-${today()}.json`,{type:'application/json'});
   if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); return; }catch(e){ if(e.name==='AbortError') return; } }
   const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=file.name; document.body.appendChild(a); a.click(); a.remove();
@@ -1557,10 +1558,10 @@ async function exportAll(){
   if('serviceWorker' in navigator){
     const hadController=!!navigator.serviceWorker.controller;
     navigator.serviceWorker.register(`sw.js?v=${APP_VERSION}`).then(reg=>{ reg.update().catch(()=>{}); }).catch(()=>{});
-    navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(hadController) toast('Nieuwe versie geïnstalleerd. Sluit de app en open hem opnieuw.'); });
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(hadController) toast('New version installed. Close the app and reopen it.'); });
   }
-  addEventListener('online',()=>toast('Weer online'));
-  addEventListener('offline',()=>toast('Offline. Je kunt gewoon doorwerken.'));
+  addEventListener('online',()=>toast('Back online'));
+  addEventListener('offline',()=>toast('Offline. You can keep working as normal.'));
 })();
 </script>
 </body>
