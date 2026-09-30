@@ -237,6 +237,7 @@ const SECTIONS = [
   {id:'facilities', name:'Facilities', fields:[
     {id:'mealHours', label:'Meal times', type:'mealtimes', meals:['Breakfast','Lunch','Dinner'], days:['Mo-Fri','Sa-Su'], standard:"Artikel 2c: dinertijden — voor crews die met de vroege vlucht vertrekken moet de avond voorafgaand tussen 17.00-19.00 uur LT gedineerd kunnen worden. Ontbijttijden Europa: het hotel regelt een ontbijt voor de vroegst vertrekkende crew. Oostelijk gelegen stations (tijdsverschil ≥5 uur): ontbijt tot 15:00 lokale tijd op rekening van KLM."},
     {id:'breakfastType', label:'Breakfast type', type:'choice', options:['Buffet','A la carte','Other'], other:'Other', standard:"Artikel 3a — norm ontbijt: vruchtensap, 2 eieren met ham, brood, boter en thee of koffie."},
+    {id:'dietaryOptions', label:'Gluten-free / allergy options available', type:'choice', options:YN},
     {id:'lunchType', label:'Lunch type', type:'choice', options:['Buffet','A la carte','Other'], other:'Other'},
     {id:'dinnerType', label:'Dinner type', type:'choice', options:['Buffet','A la carte','Other'], other:'Other'},
     {id:'extBreakfast', label:'Extended breakfast', type:'choice', options:YN},
@@ -278,7 +279,7 @@ const SECTIONS = [
     {id:'safe', label:'Safety deposit box', type:'choice', options:YN, flag:['No']}]},
   {id:'security', name:'Safety and security', fields:[
     {id:'sprinklersPublic', label:'Sprinklers/smoke detectors public areas', type:'choice', options:YN, flag:['No'], standard:"Smokedetectors en/of sprinklers dienen óf op kamerniveau óf in de gang waaraan de kamers grenzen aanwezig te zijn."},
-    {id:'emergencyExits', label:'Number of emergency exits per floor', type:'text', mode:'numeric'},
+    {id:'emergencyExits', label:'Number of emergency exits per floor', type:'select', options:Array.from({length:11},(_,i)=>String(i))},
     {id:'exitsMarked', label:'Exits clearly marked', type:'choice', options:YN, flag:['No'], standard:"De nooduitgangen en evacuatieroute dienen duidelijk aangegeven te zijn en voorzien te zijn van noodverlichting; de uitgangen en de route dienen vrij van obstakels te zijn."},
     {id:'exitObstacleFree', label:'Exit route obstacle free', type:'choice', options:YN, flag:['No'], standard:"De nooduitgangen en evacuatieroute dienen duidelijk aangegeven te zijn en voorzien te zijn van noodverlichting; de uitgangen en de route dienen vrij van obstakels te zijn."},
     {id:'exitDirectlyOutside', label:'Emergency exit directly outside', type:'choice', options:YN},
@@ -435,7 +436,10 @@ function valueText(s,f){
     if(f.detail.other && Array.isArray(dv) && dv.includes(f.detail.other) && nonEmpty(s.f[f.id+'.detail.other'])) dt+=`: ${s.f[f.id+'.detail.other']}`;
     t+=` (${dt})`;
   }
-  if(f.hours && v===f.hours.when && (nonEmpty(s.f[f.id+'.hoursFrom'])||nonEmpty(s.f[f.id+'.hoursTo']))) t+=` [${s.f[f.id+'.hoursFrom']||'?'}-${s.f[f.id+'.hoursTo']||'?'}]`;
+  if(f.hours && v===f.hours.when){
+    if(s.f[f.id+'.hours24']) t+=' [24/7]';
+    else if(nonEmpty(s.f[f.id+'.hoursFrom'])||nonEmpty(s.f[f.id+'.hoursTo'])) t+=` [${s.f[f.id+'.hoursFrom']||'?'}-${s.f[f.id+'.hoursTo']||'?'}]`;
+  }
   if(f.extra && nonEmpty(s.f[f.id+'.extra'])) t+=`${t?'  |  ':''}${f.extra}: ${s.f[f.id+'.extra']}`;
   return t;
 }
@@ -605,8 +609,9 @@ function fieldHTML(s,f){
         const on=dv===o;
         return `<button data-a="pickdetail" data-id="${k}" data-v="${esc(o)}" aria-pressed="${on}" class="${f.detail.flag?.includes(o)?'bad':''}">${esc(o)}</button>`; }).join('')}</div>`;
     } else if(f.detail.type==='search'){
-      body+=`<div class="ta-wrap sub"><input class="inp" data-k="${k}.detail" data-ta="1" value="${esc(s.f[k+'.detail'])}" placeholder="Zoek of typ een airline" autocomplete="off">
-        <div class="ta-list" hidden></div></div>`;
+      const dv=s.f[k+'.detail']||[];
+      body+=`<div class="ta-wrap sub"><input class="inp" data-ta="${k}.detail" placeholder="Zoek of typ een airline" autocomplete="off">
+        <div class="ta-list" hidden></div></div>${dv.length?`<div class="tags">${dv.map(o=>`<span class="tag">${esc(o)}<button type="button" data-a="removetag" data-id="${k}.detail" data-v="${esc(o)}" aria-label="Verwijderen">×</button></span>`).join('')}</div>`:''}`;
     } else if(f.detail.type==='multi'){
       const dv=s.f[k+'.detail']||[];
       body+=`<div class="opts multi sub" role="group" aria-label="${esc(f.detail.label||f.label)}">${f.detail.options.map(o=>{
@@ -616,11 +621,16 @@ function fieldHTML(s,f){
     } else body+=`<input class="inp sub" data-k="${k}.detail" value="${esc(s.f[k+'.detail'])}" placeholder="${f.detail.label}, bijv. 06:00-23:00">`;
   }
   if(f.hours && v===f.hours.when){
-    const kf=`${k}.hoursFrom`, kt=`${k}.hoursTo`;
+    const kf=`${k}.hoursFrom`, kt=`${k}.hoursTo`, k24=`${k}.hours24`, is24=!!s.f[k24];
     const opts=(sel)=>`<option value="" ${!s.f[sel]?'selected':''}>–</option>`+TIME_SLOTS.map(t=>`<option value="${t}" ${s.f[sel]===t?'selected':''}>${t}</option>`).join('');
-    body+=`<div class="grid2 sub">
-      <label class="f" style="margin-top:0">Open van<select class="inp" data-k="${kf}">${opts(kf)}</select></label>
-      <label class="f" style="margin-top:0">tot<select class="inp" data-k="${kt}">${opts(kt)}</select></label>
+    body+=`<div class="sub">
+      <label class="check" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <input type="checkbox" data-hours24="${k}" ${is24?'checked':''} style="width:18px;height:18px;margin:0;accent-color:var(--accent)"> Altijd open (24/7)
+      </label>
+      ${is24?'':`<div class="grid2">
+        <label class="f" style="margin-top:0">Open van<select class="inp" data-k="${kf}">${opts(kf)}</select></label>
+        <label class="f" style="margin-top:0">tot<select class="inp" data-k="${kt}">${opts(kt)}</select></label>
+      </div>`}
     </div>`;
   }
   if(f.extra) body+=`<label class="f">${f.extra}<input data-k="${k}.extra" value="${esc(s.f[k+'.extra'])}"></label>`;
@@ -1248,8 +1258,8 @@ document.addEventListener('click', async e=>{
     if(body?.hidden){ SECTIONS.forEach(sec=>{ const h=document.querySelector(`#sec-${sec.id} .cat-head`); if(h && h!==head){ const bd=h.nextElementSibling; if(bd && !bd.hidden){ bd.hidden=true; h.setAttribute('aria-expanded','false'); } } });
       body.hidden=false; head.setAttribute('aria-expanded','true'); }
     document.querySelector(`#sec-${id}`)?.scrollIntoView({behavior:'smooth',block:'start'}); }
-  else if(a==='pickta'){ const key=b.dataset.id, v=b.dataset.v; const inp=document.querySelector(`[data-k="${key}"]`); if(inp) inp.value=v; s.f[key]=v; touch(s);
-    b.closest('.ta-list').hidden=true; }
+  else if(a==='pickta'){ const key=b.dataset.id, v=b.dataset.v; const arr=s.f[key]||[]; if(!arr.includes(v)) s.f[key]=[...arr,v]; touch(s);
+    rerenderField(s,key.split('.')[0]); }
   else if(a==='pickhotel'){ const hit=hotelSuggestCache.list[Number(b.dataset.i)]; if(!hit) return;
     const box=b.closest('.ta-list'); box.hidden=true;
     let name, address, lat, lon;
@@ -1299,11 +1309,11 @@ document.addEventListener('input', e=>{
       } else { s.f[`mealHours.${mi}.weekendAuto`]=false;
         const hint=document.querySelector(`[data-wkhint="${mi}"]`); if(hint) hint.hidden=true; }
     }
-    if(d.ta){ const q=el.value.trim().toLowerCase(); const box=el.nextElementSibling;
-      const matches=q?AIRLINES.filter(a=>a.toLowerCase().includes(q)).slice(0,8):[];
-      box.innerHTML=matches.map(m=>`<button type="button" data-a="pickta" data-id="${d.k}" data-v="${esc(m)}">${esc(m)}</button>`).join('');
-      box.hidden=!matches.length; }
     if(doneCount(s)!==was) refreshStats(); }
+  else if(d.ta){ const q=el.value.trim().toLowerCase(); const box=el.nextElementSibling;
+    const matches=q?AIRLINES.filter(a=>a.toLowerCase().includes(q)).slice(0,8):[];
+    box.innerHTML=matches.map(m=>`<button type="button" data-a="pickta" data-id="${d.ta}" data-v="${esc(m)}">${esc(m)}</button>`).join('');
+    box.hidden=!matches.length; }
   else if(d.tagadd){ const val=el.value; if(val){ const arr=s.f[d.tagadd]||[]; if(!arr.includes(val)) s.f[d.tagadd]=[...arr,val]; touch(s); rerenderField(s,d.tagadd.split('.')[0]); refreshStats(); } }
   else if(d.note){ s.notes[d.note]=el.value; touch(s); }
   else if(d.photolabel){ const p=s.photos.find(x=>x.id===d.photolabel); if(p){ p.label=el.value; touch(s); } }
@@ -1336,6 +1346,7 @@ document.addEventListener('change', async e=>{
   if(el.dataset.set==='autoSavePhotos'){ S.autoSavePhotos=el.checked; persist(); }
   if(el.dataset.set==='autoAirQuality'){ S.autoAirQuality=el.checked; persist(); }
   if(el.dataset.grp){ const id=el.dataset.grp; s.recip.groups = el.checked ? [...new Set([...s.recip.groups,id])] : s.recip.groups.filter(x=>x!==id); touch(s); }
+  if(el.dataset.hours24){ const k=el.dataset.hours24; s.f[k]=el.checked; touch(s); rerenderField(s,k.split('.')[0]); }
   if(el.dataset.photo && el.files?.length){
     const defLabel=el.dataset.photoLabel||'';
     const rawFiles=[...el.files];
@@ -1465,7 +1476,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Delen lukt hier niet. Gebruik PDF opslaan en Mail opstellen.'); }
   } else toast('Delen met bijlage werkt niet in deze browser. Gebruik PDF opslaan en daarna Mail opstellen.');
 }
-const APP_VERSION='1.32.1';
+const APP_VERSION='1.34.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('PDF maken lukt niet: de PDF-bibliotheek is niet geladen. Controleer je verbinding.'); }
@@ -1545,7 +1556,7 @@ async function exportAll(){
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){
     const hadController=!!navigator.serviceWorker.controller;
-    navigator.serviceWorker.register('sw.js').catch(()=>{});
+    navigator.serviceWorker.register(`sw.js?v=${APP_VERSION}`).then(reg=>{ reg.update().catch(()=>{}); }).catch(()=>{});
     navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(hadController) toast('Nieuwe versie geïnstalleerd. Sluit de app en open hem opnieuw.'); });
   }
   addEventListener('online',()=>toast('Weer online'));
