@@ -358,12 +358,13 @@ const store = {
     }catch(e){ this.db=null; toast('Saving failed: fully close the app and reopen it.'); res(); } });
   }
 };
-let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true };
+let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true, appPasswordHash:'' };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
 let advancedUnlocked = false, versionTaps = 0, versionTapTimer = null;
+let appUnlocked = false;
 let saveTimer=null;
-function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); }
+function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); store.set('appPasswordHash',S.appPasswordHash); }
 function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(flushPersist,300); }
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='hidden' && saveTimer) flushPersist(); });
 window.addEventListener('pagehide', ()=>{ if(saveTimer) flushPersist(); });
@@ -384,6 +385,12 @@ function dateSelectHTML(s){
   return `<select class="inp" data-datepart="d" aria-label="Day">${days}</select><select class="inp" data-datepart="m" aria-label="Month">${months}</select><select class="inp" data-datepart="y" aria-label="Year">${years}</select>`;
 }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),3800); }
+async function hashText(t){
+  try{
+    const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }catch(e){ return null; }
+}
 const cur = ()=>{ const s=S.surveys.find(x=>x.id===view.id); if(s){ s.scores=s.scores||{}; s.compliance=s.compliance||{}; if(s.caoAuto===undefined) s.caoAuto=true; if(s.driveTimeAuto===undefined) s.driveTimeAuto=true; if(s.airQualityAuto===undefined) s.airQualityAuto=true; if(s.address===undefined) s.address=''; } return s; };
 const title = s=>s.hotel||'Unnamed hotel';
 const surveyedBy = s=>[s.reps,s.inspector].filter(Boolean).join(' & ');
@@ -455,6 +462,28 @@ function editDockHTML(s){
 }
 function render(){ window.scrollTo(0,0);
   ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs})[view.name](); }
+
+function renderLock(msg){
+  $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
+  setDock('');
+  $('#app').innerHTML = `
+    <section class="panel" style="margin-top:40px">
+      <h2>Locked</h2>
+      <p class="hint">Enter the shared password to open Pillow Report.</p>
+      <label class="f">Password<input type="password" id="lockInput" autocomplete="off" autocapitalize="off"></label>
+      ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
+      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="unlock">Unlock</button>
+    </section>`;
+  const inp=$('#lockInput');
+  inp?.addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); });
+  inp?.focus();
+}
+async function tryUnlock(){
+  const inp=$('#lockInput'); const val=inp?.value||'';
+  const hash=await hashText(val);
+  if(hash && hash===S.appPasswordHash){ appUnlocked=true; render(); }
+  else renderLock('Incorrect password, try again.');
+}
 
 function renderHome(){
   setBar(`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span><button class="icon-btn" data-a="settings" aria-label="Settings">${ICON.settings}</button>`);
@@ -1033,6 +1062,13 @@ function renderSettings(){
       <label class="f">WAQI token (free)<input type="password" data-set="waqiToken" value="${esc(S.waqiToken)}" autocomplete="off" placeholder="Paste your token here"></label>
       <p class="hint" style="margin-top:8px">Request a free token: go to <b>aqicn.org/data-platform/token/</b>, enter your email address, and you'll receive a token by email right away. No credit card or billing needed. Paste the token above.</p>`:''}
     </section>
+    ${advancedUnlocked?`
+    <section class="panel"><h2>Lock screen</h2>
+      <p class="hint">Sets one shared password everyone uses to open the app. This is a light deterrent, not real encryption — treat it like a screen lock, not a safe.</p>
+      <label class="f">${S.appPasswordHash?'New password (leave empty to keep current)':'Set password'}<input type="password" id="newAppPassword" autocomplete="off" placeholder="${S.appPasswordHash?'Leave empty to keep current':'Choose a shared password'}"></label>
+      <button type="button" class="btn wide" style="margin-top:10px" data-a="setpassword">Save password</button>
+      ${S.appPasswordHash?'<button type="button" class="btn wide danger" style="margin-top:10px" data-a="removepassword">Remove lock screen</button>':''}
+    </section>`:''}
     <section class="panel"><h2>Saved recipients</h2>
       <p class="hint">Create groups, e.g. per station or department. Separate multiple addresses with a comma.</p>
       ${S.groups.map(g=>`<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:4px">
@@ -1224,7 +1260,14 @@ document.addEventListener('click', async e=>{
   if(suppressClick) return;
   const b=e.target.closest('[data-a]'); if(!b) return;
   const a=b.dataset.a, s=cur();
-  if(a==='home'){view={name:'home'};render();}
+  if(a==='unlock'){ tryUnlock(); }
+  else if(a==='setpassword'){
+    const inp=$('#newAppPassword'); const val=inp?.value||'';
+    if(!val){ if(S.appPasswordHash){ toast('No change made.'); } else toast('Enter a password first.'); return; }
+    S.appPasswordHash=await hashText(val); persist(); render(); toast('Password saved.');
+  }
+  else if(a==='removepassword'){ if(confirm('Remove the shared password? Anyone can then open the app without one.')){ S.appPasswordHash=''; persist(); render(); toast('Lock screen removed.'); } }
+  else if(a==='home'){view={name:'home'};render();}
   else if(a==='settings'){view={name:'settings'};render();}
   else if(a==='new'){
     const n={id:uid(),hotel:'',address:'',city:'',reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''}};
@@ -1480,7 +1523,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.35.1';
+const APP_VERSION='1.36.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
@@ -1556,7 +1599,8 @@ async function exportAll(){
   const savedAutoAQ=await store.get('autoAirQuality'); S.autoAirQuality = savedAutoAQ===undefined ? true : savedAutoAQ;
   S.waqiToken=(await store.get('waqiToken'))||'';
   const savedAutoSavePhotos=await store.get('autoSavePhotos'); S.autoSavePhotos = savedAutoSavePhotos===undefined ? true : savedAutoSavePhotos;
-  render();
+  S.appPasswordHash=(await store.get('appPasswordHash'))||'';
+  if(S.appPasswordHash && !appUnlocked) renderLock(); else render();
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){
     const hadController=!!navigator.serviceWorker.controller;
