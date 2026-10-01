@@ -370,6 +370,8 @@ const store = {
    A device can still override these via the hidden Settings fields (7 taps on the version number). */
 const DEFAULT_GOOGLE_MAPS_KEY = 'AIzaSyD_Jcqk1ucjFox-22y_4l1v7AOCE9olJFQ';
 const DEFAULT_WAQI_TOKEN = '450eb63d4c903214e7f4c1a644315150a7ff2b25';
+/* SHA-256 hash of the shared lock-screen password, not the password itself. A device can clear/override this via the hidden Settings lock-screen section. */
+const DEFAULT_APP_PASSWORD_HASH = '6f5bbb9cdb88b00a1f67d4fc866eeb90d043e4df836e252796c3a78eb812a309';
 let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true, appPasswordHash:'', summary:'' };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
@@ -1620,7 +1622,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.40.0';
+const APP_VERSION='1.41.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
@@ -1696,7 +1698,7 @@ async function exportAll(){
   const savedAutoAQ=await store.get('autoAirQuality'); S.autoAirQuality = savedAutoAQ===undefined ? true : savedAutoAQ;
   const savedWaqi=await store.get('waqiToken'); S.waqiToken = savedWaqi===undefined ? DEFAULT_WAQI_TOKEN : savedWaqi;
   const savedAutoSavePhotos=await store.get('autoSavePhotos'); S.autoSavePhotos = savedAutoSavePhotos===undefined ? true : savedAutoSavePhotos;
-  S.appPasswordHash=(await store.get('appPasswordHash'))||'';
+  const savedAppPwHash=await store.get('appPasswordHash'); S.appPasswordHash = savedAppPwHash===undefined ? DEFAULT_APP_PASSWORD_HASH : savedAppPwHash;
   S.summary=(await store.get('summary'))||'';
   if(S.appPasswordHash && !appUnlocked) renderLock(); else render();
   try{ await navigator.storage?.persist?.(); }catch(e){}
