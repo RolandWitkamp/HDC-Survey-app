@@ -150,6 +150,11 @@ textarea{resize:vertical;min-height:72px}
 
 .toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:12px;max-width:min(90vw,480px);z-index:30;font-size:.95rem;opacity:0;pointer-events:none;transition:opacity .2s}
 .toast.on{opacity:1}
+.modal-backdrop{position:fixed;inset:0;background:rgba(10,16,26,.5);z-index:40;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal-panel{background:var(--surface);border-radius:14px;padding:20px;max-width:400px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.modal-panel h2{font-size:1.1rem;margin:0 0 6px}
+.modal-panel p{color:var(--muted);font-size:.9rem;margin:0 0 14px}
+.modal-panel .actions{display:grid;gap:10px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 @media (max-width:420px){.grid2{grid-template-columns:1fr}.scores{grid-template-columns:repeat(6,1fr)}.scores button.na{font-size:.7rem}}
 
@@ -204,6 +209,7 @@ textarea{resize:vertical;min-height:72px}
 <main id="app"></main>
 <div class="dock" id="dock" hidden><div class="dock-in" id="dockIn"></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="modal-backdrop" id="modalBackdrop" hidden><div class="modal-panel" id="modalPanel" role="dialog" aria-modal="true"></div></div>
 
 <script>
 /* ---------- Checklist: follows Survey_Checklist_2025 ----------
@@ -232,6 +238,7 @@ const SECTIONS = [
     {id:'guests', label:'Guests', type:'slider', min:0, max:100, step:5, left:'Business', right:'Leisure'},
     {id:'occupancyRate', label:'Occupancy rate', type:'select', options:Array.from({length:21},(_,i)=>`${i*5}%`)},
     {id:'management', label:'Management', type:'text'},
+    {id:'hotelRating', label:'Google rating', type:'text', ph:'Automatically fetched when picking a hotel', optional:true},
     {id:'airlineExp', label:'Airline experience', type:'choice', options:YN, detail:{when:'Yes', type:'search'}},
     {id:'crewCheckin', label:'Separate check-in for crew', type:'choice', options:YN},
     {id:'generalInfo', label:'Other information', type:'area', optional:true}]},
@@ -358,6 +365,10 @@ const store = {
     }catch(e){ this.db=null; toast('Saving failed: fully close the app and reopen it.'); res(); } });
   }
 };
+/* Shared default API keys, baked in so every fresh install works without setup.
+   A device can still override these via the hidden Settings fields (7 taps on the version number). */
+const DEFAULT_GOOGLE_MAPS_KEY = 'AIzaSyD_Jcqk1ucjFox-22y_4l1v7AOCE9olJFQ';
+const DEFAULT_WAQI_TOKEN = '450eb63d4c903214e7f4c1a644315150a7ff2b25';
 let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true, appPasswordHash:'' };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
@@ -385,6 +396,8 @@ function dateSelectHTML(s){
   return `<select class="inp" data-datepart="d" aria-label="Day">${days}</select><select class="inp" data-datepart="m" aria-label="Month">${months}</select><select class="inp" data-datepart="y" aria-label="Year">${years}</select>`;
 }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),3800); }
+function showModal(html){ $('#modalPanel').innerHTML=html; $('#modalBackdrop').hidden=false; }
+function hideModal(){ $('#modalBackdrop').hidden=true; $('#modalPanel').innerHTML=''; }
 async function hashText(t){
   try{
     const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
@@ -862,7 +875,7 @@ function googlePlacePredictions(query){
 }
 function googlePlaceDetails(placeId){
   return new Promise(resolve=>{
-    try{ placesService.getDetails({placeId, fields:['name','formatted_address','geometry']}, (place,status)=>{ resolve(status==='OK'?place:null); }); }
+    try{ placesService.getDetails({placeId, fields:['name','formatted_address','geometry','rating','user_ratings_total']}, (place,status)=>{ resolve(status==='OK'?place:null); }); }
     catch(e){ resolve(null); }
   });
 }
@@ -1251,6 +1264,7 @@ if('ontouchstart' in window){
   document.addEventListener('mouseup', swipeEnd);
 }
 document.addEventListener('click', e=>{
+  if(e.target.id==='modalBackdrop') hideModal();
   if(!e.target.closest('.swipe-row')) closeSwipes();
   if(!e.target.closest('.ta-wrap')) document.querySelectorAll('.ta-list').forEach(b=>b.hidden=true);
 });
@@ -1278,7 +1292,17 @@ document.addEventListener('click', async e=>{
   else if(a==='report'){view={name:'report',id:s.id};render();}
   else if(a==='back-edit'){view={name:'edit',id:s.id};render();}
   else if(a==='delete'){ if(confirm(`Delete survey "${title(s)}"?`)){ S.surveys=S.surveys.filter(x=>x.id!==s.id); persist(); view={name:'home'}; render(); toast('Survey deleted'); } }
-  else if(a==='sharesurvey'){ if(confirm('Also back up ALL surveys, instead of just this one?')) exportAll(); else exportSurvey(s); }
+  else if(a==='sharesurvey'){
+    showModal(`<h2>Export</h2><p>Back up just this survey, or everything?</p>
+      <div class="actions">
+        <button type="button" class="btn primary" data-a="exportthis">This survey (${esc(title(s))})</button>
+        <button type="button" class="btn" data-a="exportall2">All surveys</button>
+        <button type="button" class="btn" data-a="modalcancel">Cancel</button>
+      </div>`);
+  }
+  else if(a==='exportthis'){ hideModal(); exportSurvey(s); }
+  else if(a==='exportall2'){ hideModal(); exportAll(); }
+  else if(a==='modalcancel'){ hideModal(); }
   else if(a==='pick'){ const id=b.dataset.id, v=b.dataset.v; if(id==='cao') s.caoAuto=false; s.f[id] = s.f[id]===v?undefined:v; if(s.f[id]===undefined) delete s.f[id]; touch(s); rerenderField(s,id); refreshStats(); }
   else if(a==='caoauto'){ s.caoAuto=true; touch(s); rerenderField(s,'cao'); refreshStats(); }
   else if(a==='drivetimeauto'){ s.driveTimeAuto=true; rerenderField(s,'driveTime'); scheduleDriveTimeLookup(s); }
@@ -1314,6 +1338,7 @@ document.addEventListener('click', async e=>{
       const place=await googlePlaceDetails(hit.place_id); if(!place) return;
       name=place.name||hit.structured_formatting?.main_text||''; address=place.formatted_address||'';
       lat=place.geometry?.location?.lat(); lon=place.geometry?.location?.lng();
+      if(place.rating!=null) s.f.hotelRating=`${place.rating}/5${place.user_ratings_total?` (${place.user_ratings_total} reviews)`:''}`;
     } else {
       name=hit.namedetails?.name||hit.display_name.split(',')[0]; address=hit.display_name||'';
       lat=parseFloat(hit.lat); lon=parseFloat(hit.lon);
@@ -1322,6 +1347,7 @@ document.addEventListener('click', async e=>{
     $('#bar h1').textContent=title(s);
     const hInput=document.querySelector('[data-top="hotel"]'); if(hInput) hInput.value=name;
     const aInput=document.querySelector('[data-top="address"]'); if(aInput) aInput.value=s.address;
+    rerenderField(s,'hotelRating');
     scheduleDriveTimeLookup(s); scheduleAirQualityLookup(s); }
   else if(a==='delphoto'){ s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); refreshPhotosUI(s); }
   else if(a==='savephotos'){ savePhotosToLibrary(s); }
@@ -1523,7 +1549,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.36.1';
+const APP_VERSION='1.39.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
@@ -1595,9 +1621,9 @@ async function exportAll(){
   S.surveys=(await store.get('surveys-v2'))||[]; S.groups=(await store.get('groups'))||[]; S.defaultRep=(await store.get('defaultRep'))||'';
   const savedAutoDrive=await store.get('autoDriveTime'); S.autoDriveTime = savedAutoDrive===undefined ? true : savedAutoDrive;
   const savedAutoAddress=await store.get('autoAddress'); S.autoAddress = savedAutoAddress===undefined ? true : savedAutoAddress;
-  S.googleMapsKey=(await store.get('googleMapsKey'))||'';
+  const savedGMKey=await store.get('googleMapsKey'); S.googleMapsKey = savedGMKey===undefined ? DEFAULT_GOOGLE_MAPS_KEY : savedGMKey;
   const savedAutoAQ=await store.get('autoAirQuality'); S.autoAirQuality = savedAutoAQ===undefined ? true : savedAutoAQ;
-  S.waqiToken=(await store.get('waqiToken'))||'';
+  const savedWaqi=await store.get('waqiToken'); S.waqiToken = savedWaqi===undefined ? DEFAULT_WAQI_TOKEN : savedWaqi;
   const savedAutoSavePhotos=await store.get('autoSavePhotos'); S.autoSavePhotos = savedAutoSavePhotos===undefined ? true : savedAutoSavePhotos;
   S.appPasswordHash=(await store.get('appPasswordHash'))||'';
   if(S.appPasswordHash && !appUnlocked) renderLock(); else render();
