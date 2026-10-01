@@ -372,13 +372,13 @@ const DEFAULT_GOOGLE_MAPS_KEY = 'AIzaSyD_Jcqk1ucjFox-22y_4l1v7AOCE9olJFQ';
 const DEFAULT_WAQI_TOKEN = '450eb63d4c903214e7f4c1a644315150a7ff2b25';
 /* SHA-256 hash of the shared lock-screen password, not the password itself. A device can clear/override this via the hidden Settings lock-screen section. */
 const DEFAULT_APP_PASSWORD_HASH = '6f5bbb9cdb88b00a1f67d4fc866eeb90d043e4df836e252796c3a78eb812a309';
-let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true, appPasswordHash:'', summary:'' };
+let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true, appPasswordHash:'', summary:'', summaryCity:'', summaryInspectors:'' };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
 let advancedUnlocked = false, versionTaps = 0, versionTapTimer = null;
 let appUnlocked = false;
 let saveTimer=null;
-function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); store.set('appPasswordHash',S.appPasswordHash); store.set('summary',S.summary); }
+function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); store.set('appPasswordHash',S.appPasswordHash); store.set('summary',S.summary); store.set('summaryCity',S.summaryCity); store.set('summaryInspectors',S.summaryInspectors); }
 function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(flushPersist,300); }
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='hidden'){
@@ -1229,12 +1229,21 @@ function renderDocs(){
   setDock('');
 }
 
+function syncSummaryHotelNames(){
+  const names=S.surveys.filter(s=>(s.hotel||'').trim()).map(s=>s.hotel.trim());
+  const missing=[...new Set(names)].filter(name=>!S.summary.includes(name));
+  if(missing.length){ S.summary=(S.summary?S.summary.replace(/\s+$/,'')+'\n\n':'')+missing.join('\n\n'); persist(); }
+}
 function renderSummary(){
+  syncSummaryHotelNames();
   setBar(`<button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>Summary</h1><button class="icon-btn" data-a="exportsummary" aria-label="Export PDF">${ICON.share}</button>`);
   $('#app').innerHTML = `
     <section class="panel">
       <h2>Hotel summary</h2>
-      <p class="hint">Type or paste your plus and minus points per hotel — works with text copied from Word, Notes, Google Docs, anything. Put each hotel name on its own line, then list points starting with + or -.</p>
+      <p class="hint">Hotel names from your surveys are added automatically. Type or paste your plus and minus points per hotel — works with text copied from Word, Notes, Google Docs, anything. Lines starting with + or - become bullet points; other lines become hotel headings.</p>
+      <label class="f">City / airport code (shown in the PDF header)<input id="summaryCity" value="${esc(S.summaryCity)}" placeholder="e.g. Riyadh, RUH"></label>
+      <label class="f">Inspector(s) (shown in the PDF header)<input id="summaryInspectors" value="${esc(S.summaryInspectors)}" placeholder="e.g. Witkamp & Snijders"></label>
+      <label class="f" style="margin-top:14px">Summary text</label>
       <textarea class="inp" id="summaryText" rows="18" placeholder="${esc('Hilton Riyadh\n+ Great location\n+ Friendly staff\n- Noisy AC unit\n\nMovenpick Amsterdam\n+ Spacious rooms\n- Slow check-in')}">${esc(S.summary)}</textarea>
       <label class="add-photo" style="margin-top:12px">📄 Import text file (.txt)<input type="file" accept=".txt,text/plain" id="summaryImport" style="position:absolute;width:1px;height:1px;opacity:0"></label>
     </section>`;
@@ -1392,6 +1401,8 @@ document.addEventListener('click', async e=>{
 document.addEventListener('input', e=>{
   const el=e.target, s=cur(), d=el.dataset;
   if(el.id==='summaryText'){ S.summary=el.value; persist(); return; }
+  if(el.id==='summaryCity'){ S.summaryCity=el.value; persist(); return; }
+  if(el.id==='summaryInspectors'){ S.summaryInspectors=el.value; persist(); return; }
   if(d.k){ const was=s? doneCount(s):0; if(d.k==='driveTime') s.driveTimeAuto=false; if(d.k==='airQualityIndex') s.airQualityAuto=false; s.f[d.k]=el.value; touch(s);
     const fld=FIELD[d.k]; if(fld?.type==='slider'){ const sv=document.querySelector(`[data-sliderval="${d.k}"]`); if(sv) sv.textContent=sliderText(fld,Number(el.value)); }
     const mm=d.k.match(/^mealHours\.(\d+)\.(\d+)\.(from|to)$/);
@@ -1439,6 +1450,9 @@ document.addEventListener('change', async e=>{
     try{ const d=JSON.parse(await el.files[0].text()); if(!Array.isArray(d.surveys)) throw 0;
       let n=0; d.surveys.forEach(x=>{ if(!x?.id||!x.f) return; const i=S.surveys.findIndex(y=>y.id===x.id); if(i>=0) S.surveys[i]=x; else S.surveys.push(x); n++; });
       (d.groups||[]).forEach(g=>{ if(g?.id && !S.groups.some(y=>y.id===g.id)) S.groups.push(g); });
+      if(typeof d.summary==='string' && d.summary) S.summary=d.summary;
+      if(typeof d.summaryCity==='string' && d.summaryCity) S.summaryCity=d.summaryCity;
+      if(typeof d.summaryInspectors==='string' && d.summaryInspectors) S.summaryInspectors=d.summaryInspectors;
       persist(); toast(`${n} survey${n===1?'':'s'} restored`); render();
     }catch(err){ toast('This file is not a Pillow Report backup.'); }
     el.value=''; return;
@@ -1570,32 +1584,55 @@ const pdfName = s=>`Pillow Report ${title(s).replace(/[\\/:*?"<>|]/g,'')} ${s.ci
 function makeSummaryPdf(){
   if(!window.jspdf) throw new Error('nolib');
   const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); const W=210,H=297,M=16,CW=W-2*M; let y=0;
-  const ensure=h=>{ if(y+h>H-M-6){ doc.addPage(); y=M; } };
   const setF=(size,style='normal',col=INK)=>{ doc.setFont('helvetica',style); doc.setFontSize(size); doc.setTextColor(...col); };
-  doc.setFillColor(...KLMBLUE); doc.rect(0,0,W,36,'F');
-  setF(9,'bold',[170,190,215]); doc.text('PILLOW REPORT',M,12);
-  setF(18,'bold',[255,255,255]); doc.text('Hotel Summary',M,24);
-  setF(9,'normal',[200,212,228]); doc.text(dateNL(today()),M,30);
-  y=48;
+  const HEAD_SIZE=13, POINT_SIZE=10.5, LINE_H=5;
+
+  const blocks=[]; let blk=null;
   (S.summary||'').split('\n').forEach(raw=>{
-    const line=raw.trim();
-    if(!line){ y+=3; return; }
+    const line=raw.trim(); if(!line) return;
     const isPlus=line.startsWith('+'), isMinus=line.startsWith('-');
     if(isPlus||isMinus){
-      const txt=line.slice(1).trim();
-      doc.setFontSize(10.5);
-      const wrapped=doc.splitTextToSize(txt,CW-10);
-      ensure(wrapped.length*5+2);
-      doc.setFillColor(...(isPlus?GREEN:RED)); doc.circle(M+1.2,y+1.3,1.3,'F');
-      setF(10.5,'normal',INK); doc.text(wrapped,M+6,y+2);
-      y+=wrapped.length*5+2;
-    } else {
-      doc.setFontSize(12.5);
-      const wrapped=doc.splitTextToSize(line,CW);
-      ensure(wrapped.length*6+6); y+=4;
-      setF(12.5,'bold',INK); doc.text(wrapped,M,y+4); y+=wrapped.length*6+2;
-    }
+      if(!blk){ blk={heading:'',points:[]}; blocks.push(blk); }
+      blk.points.push({sign:isPlus?'+':'-', text:line.slice(1).trim()});
+    } else { blk={heading:line, points:[]}; blocks.push(blk); }
   });
+  const measure=block=>{
+    let h=0;
+    if(block.heading){ doc.setFontSize(HEAD_SIZE); h+=doc.splitTextToSize(block.heading,CW).length*6.5+5; }
+    block.points.forEach(p=>{ doc.setFontSize(POINT_SIZE); h+=doc.splitTextToSize(p.text,CW-10).length*LINE_H+1.5; });
+    return h+6;
+  };
+
+  const headerSub=[S.summaryCity,dateNL(today()),S.summaryInspectors?'Surveyed by '+S.summaryInspectors:''].filter(Boolean).join('   |   ');
+  doc.setFillColor(...KLMBLUE); doc.rect(0,0,W,36,'F');
+  setF(9,'bold',[170,190,215]); doc.text('PILLOW REPORT',M,12);
+  setF(18,'bold',[255,255,255]); doc.text(S.summaryCity?`Hotel Summary — ${S.summaryCity}`:'Hotel Summary',M,24);
+  setF(9,'normal',[200,212,228]); doc.text(headerSub,M,30);
+  y=48;
+
+  blocks.forEach(block=>{
+    const h=measure(block);
+    if(y>M && y+h>H-M-6){ doc.addPage(); y=M; }
+    if(block.heading){
+      doc.setFontSize(HEAD_SIZE);
+      const wrapped=doc.splitTextToSize(block.heading,CW);
+      y+=5; setF(HEAD_SIZE,'normal',INK); doc.text(wrapped,M,y+4);
+      y+=wrapped.length*6.5;
+      doc.setDrawColor(213,221,230); doc.setLineWidth(0.3); doc.line(M,y+1,W-M,y+1);
+      y+=4;
+    }
+    block.points.forEach(p=>{
+      doc.setFontSize(POINT_SIZE);
+      const wrapped=doc.splitTextToSize(p.text,CW-10);
+      const ph=wrapped.length*LINE_H+1.5;
+      if(y+ph>H-M-6){ doc.addPage(); y=M; }
+      setF(POINT_SIZE,'bold',p.sign==='+'?GREEN:RED); doc.text(p.sign,M,y+4);
+      setF(POINT_SIZE,'normal',INK); doc.text(wrapped,M+6,y+4);
+      y+=ph;
+    });
+    y+=6;
+  });
+
   const n=doc.getNumberOfPages();
   for(let i=1;i<=n;i++){ doc.setPage(i); setF(8,'normal',[140,150,165]); doc.text('made by Pillow Report',W/2,H-8,{align:'center'}); doc.text(`${i} / ${n}`,W-M,H-8,{align:'right'}); }
   return doc.output('blob');
@@ -1622,7 +1659,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.41.0';
+const APP_VERSION='1.42.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
@@ -1681,7 +1718,7 @@ async function exportSurvey(s){
   const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=file.name; document.body.appendChild(a); a.click(); a.remove();
 }
 async function exportAll(){
-  const data=JSON.stringify({surveys:S.surveys,groups:S.groups,defaultRep:S.defaultRep},null,1);
+  const data=JSON.stringify({surveys:S.surveys,groups:S.groups,defaultRep:S.defaultRep,summary:S.summary,summaryCity:S.summaryCity,summaryInspectors:S.summaryInspectors},null,1);
   if(downloads){ try{ await downloads.save({filename:`hotel-surveys-${today()}.json`,data}); toast('Export saved'); }catch(e){ if(e?.code!=='declined') toast('Exporting does not work here.'); } return; }
   const file=new File([data],`hotel-surveys-${today()}.json`,{type:'application/json'});
   if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); return; }catch(e){ if(e.name==='AbortError') return; } }
@@ -1700,6 +1737,8 @@ async function exportAll(){
   const savedAutoSavePhotos=await store.get('autoSavePhotos'); S.autoSavePhotos = savedAutoSavePhotos===undefined ? true : savedAutoSavePhotos;
   const savedAppPwHash=await store.get('appPasswordHash'); S.appPasswordHash = savedAppPwHash===undefined ? DEFAULT_APP_PASSWORD_HASH : savedAppPwHash;
   S.summary=(await store.get('summary'))||'';
+  S.summaryCity=(await store.get('summaryCity'))||'';
+  S.summaryInspectors=(await store.get('summaryInspectors'))||'';
   if(S.appPasswordHash && !appUnlocked) renderLock(); else render();
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){
