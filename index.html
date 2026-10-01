@@ -1232,7 +1232,7 @@ function renderDocs(){
 function syncSummaryHotelNames(){
   const names=S.surveys.filter(s=>(s.hotel||'').trim()).map(s=>s.hotel.trim());
   const missing=[...new Set(names)].filter(name=>!S.summary.includes(name));
-  if(missing.length){ S.summary=(S.summary?S.summary.replace(/\s+$/,'')+'\n\n':'')+missing.join('\n\n'); persist(); }
+  if(missing.length){ S.summary=(S.summary?S.summary.replace(/\s+$/,'')+'\n\n':'')+missing.map(n=>n+':').join('\n\n'); persist(); }
 }
 function renderSummary(){
   syncSummaryHotelNames();
@@ -1240,11 +1240,11 @@ function renderSummary(){
   $('#app').innerHTML = `
     <section class="panel">
       <h2>Hotel summary</h2>
-      <p class="hint">Hotel names from your surveys are added automatically. Type or paste your plus and minus points per hotel — works with text copied from Word, Notes, Google Docs, anything. Lines starting with + or - become bullet points; other lines become hotel headings.</p>
+      <p class="hint">Hotel names from your surveys are added automatically. Type or paste your plus and minus points per hotel — works with text copied from Word, Notes, Google Docs, anything. End a hotel name with a colon (:) to start a new hotel — each one gets its own page in the PDF. Lines starting with + or - become bullet points; any other text becomes a paragraph under that hotel.</p>
       <label class="f">City / airport code (shown in the PDF header)<input id="summaryCity" value="${esc(S.summaryCity)}" placeholder="e.g. Riyadh, RUH"></label>
       <label class="f">Inspector(s) (shown in the PDF header)<input id="summaryInspectors" value="${esc(S.summaryInspectors)}" placeholder="e.g. Witkamp & Snijders"></label>
       <label class="f" style="margin-top:14px">Summary text</label>
-      <textarea class="inp" id="summaryText" rows="18" placeholder="${esc('Hilton Riyadh\n+ Great location\n+ Friendly staff\n- Noisy AC unit\n\nMovenpick Amsterdam\n+ Spacious rooms\n- Slow check-in')}">${esc(S.summary)}</textarea>
+      <textarea class="inp" id="summaryText" rows="18" placeholder="${esc('Hilton Riyadh:\n+ Great location\n+ Friendly staff\n- Noisy AC unit\nA short paragraph with more detail can go here too.\n\nMovenpick Amsterdam:\n+ Spacious rooms\n- Slow check-in')}">${esc(S.summary)}</textarea>
       <label class="add-photo" style="margin-top:12px">📄 Import text file (.txt)<input type="file" accept=".txt,text/plain" id="summaryImport" style="position:absolute;width:1px;height:1px;opacity:0"></label>
     </section>`;
   setDock('');
@@ -1585,23 +1585,20 @@ function makeSummaryPdf(){
   if(!window.jspdf) throw new Error('nolib');
   const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); const W=210,H=297,M=16,CW=W-2*M; let y=0;
   const setF=(size,style='normal',col=INK)=>{ doc.setFont('helvetica',style); doc.setFontSize(size); doc.setTextColor(...col); };
-  const HEAD_SIZE=13, POINT_SIZE=10.5, LINE_H=5;
+  const HEAD_SIZE=14, POINT_SIZE=10.5, PARA_SIZE=10, LINE_H=5, PARA_LINE_H=4.6;
 
+  // Parse into one block per hotel. A line ending in ":" (and not a bullet) starts a new hotel;
+  // + / - lines are bullets; anything else is paragraph text under the current hotel.
   const blocks=[]; let blk=null;
   (S.summary||'').split('\n').forEach(raw=>{
     const line=raw.trim(); if(!line) return;
     const isPlus=line.startsWith('+'), isMinus=line.startsWith('-');
-    if(isPlus||isMinus){
-      if(!blk){ blk={heading:'',points:[]}; blocks.push(blk); }
-      blk.points.push({sign:isPlus?'+':'-', text:line.slice(1).trim()});
-    } else { blk={heading:line, points:[]}; blocks.push(blk); }
+    const isHeading=!isPlus && !isMinus && line.endsWith(':');
+    if(isHeading){ blk={heading:line.slice(0,-1).trim(), items:[]}; blocks.push(blk); return; }
+    if(!blk){ blk={heading:'',items:[]}; blocks.push(blk); }
+    if(isPlus||isMinus) blk.items.push({type:'point', sign:isPlus?'+':'-', text:line.slice(1).trim()});
+    else blk.items.push({type:'para', text:line});
   });
-  const measure=block=>{
-    let h=0;
-    if(block.heading){ doc.setFontSize(HEAD_SIZE); h+=doc.splitTextToSize(block.heading,CW).length*6.5+5; }
-    block.points.forEach(p=>{ doc.setFontSize(POINT_SIZE); h+=doc.splitTextToSize(p.text,CW-10).length*LINE_H+1.5; });
-    return h+6;
-  };
 
   const headerSub=[S.summaryCity,dateNL(today()),S.summaryInspectors?'Surveyed by '+S.summaryInspectors:''].filter(Boolean).join('   |   ');
   doc.setFillColor(...KLMBLUE); doc.rect(0,0,W,36,'F');
@@ -1610,27 +1607,37 @@ function makeSummaryPdf(){
   setF(9,'normal',[200,212,228]); doc.text(headerSub,M,30);
   y=48;
 
-  blocks.forEach(block=>{
-    const h=measure(block);
-    if(y>M && y+h>H-M-6){ doc.addPage(); y=M; }
+  blocks.forEach((block,bi)=>{
+    if(bi>0){ doc.addPage(); y=M; }
     if(block.heading){
       doc.setFontSize(HEAD_SIZE);
       const wrapped=doc.splitTextToSize(block.heading,CW);
       y+=5; setF(HEAD_SIZE,'normal',INK); doc.text(wrapped,M,y+4);
-      y+=wrapped.length*6.5;
-      doc.setDrawColor(213,221,230); doc.setLineWidth(0.3); doc.line(M,y+1,W-M,y+1);
-      y+=4;
+      y+=wrapped.length*7;
+      doc.setDrawColor(...KLMBLUE); doc.setLineWidth(0.5); doc.line(M,y+1,W-M,y+1);
+      y+=7;
     }
-    block.points.forEach(p=>{
-      doc.setFontSize(POINT_SIZE);
-      const wrapped=doc.splitTextToSize(p.text,CW-10);
-      const ph=wrapped.length*LINE_H+1.5;
-      if(y+ph>H-M-6){ doc.addPage(); y=M; }
-      setF(POINT_SIZE,'bold',p.sign==='+'?GREEN:RED); doc.text(p.sign,M,y+4);
-      setF(POINT_SIZE,'normal',INK); doc.text(wrapped,M+6,y+4);
-      y+=ph;
+    let lastType=null;
+    block.items.forEach(item=>{
+      if(item.type==='point'){
+        doc.setFontSize(POINT_SIZE);
+        const wrapped=doc.splitTextToSize(item.text,CW-10);
+        const h=wrapped.length*LINE_H+1.5;
+        if(y+h>H-M-6){ doc.addPage(); y=M; }
+        setF(POINT_SIZE,'bold',item.sign==='+'?GREEN:RED); doc.text(item.sign,M,y+4);
+        setF(POINT_SIZE,'normal',INK); doc.text(wrapped,M+6,y+4);
+        y+=h;
+      } else {
+        if(lastType==='point') y+=3.5;
+        doc.setFontSize(PARA_SIZE);
+        const wrapped=doc.splitTextToSize(item.text,CW);
+        const h=wrapped.length*PARA_LINE_H+2.5;
+        if(y+h>H-M-6){ doc.addPage(); y=M; }
+        setF(PARA_SIZE,'normal',MUTED); doc.text(wrapped,M,y+4);
+        y+=h;
+      }
+      lastType=item.type;
     });
-    y+=6;
   });
 
   const n=doc.getNumberOfPages();
@@ -1659,7 +1666,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.42.0';
+const APP_VERSION='1.43.0';
 let downloads=null;
 async function savePdf(s){
   let blob; try{ blob=makePdf(s); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
