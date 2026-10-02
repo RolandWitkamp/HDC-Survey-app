@@ -1584,8 +1584,15 @@ function staticMapUrlMulti(hotels,airport){
 }
 async function getSummaryMapDataUrl(){
   if(!S.googleMapsKey || !navigator.onLine) return null;
-  const matched=S.surveys
-    .filter(s=>(s.hotel||'').trim() && S.summary.includes(s.hotel.trim()) && s.hotelLat!=null && s.hotelLon!=null)
+  const candidates=S.surveys.filter(s=>(s.hotel||'').trim() && S.summary.includes(s.hotel.trim()));
+  for(const s of candidates){
+    if(s.hotelLat==null || s.hotelLon==null){
+      const q=(s.address||'').trim() || s.hotel.trim();
+      try{ const loc=await geocode(q); if(loc){ s.hotelLat=loc.lat; s.hotelLon=loc.lon; persist(); } }catch(e){}
+    }
+  }
+  const matched=candidates
+    .filter(s=>s.hotelLat!=null && s.hotelLon!=null)
     .map(s=>({s, idx:S.summary.indexOf(s.hotel.trim())}))
     .sort((a,b)=>a.idx-b.idx)
     .map(x=>x.s);
@@ -1775,7 +1782,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.46.1';
+const APP_VERSION='1.47.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
