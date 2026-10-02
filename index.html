@@ -1585,15 +1585,18 @@ function staticMapUrlMulti(hotels,airport){
 async function getSummaryMapDataUrl(){
   if(!S.googleMapsKey || !navigator.onLine) return null;
   const norm=t=>(t||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
+  const wordSet=t=>new Set(norm(t).split(' ').filter(Boolean));
+  const matchScore=(a,b)=>{ const wa=wordSet(a), wb=wordSet(b); if(!wa.size||!wb.size) return 0;
+    let common=0; wa.forEach(w=>{ if(wb.has(w)) common++; }); return common/Math.min(wa.size,wb.size); };
   const blocks=parseSummaryBlocks();
   const ordered=[]; const unmatchedHeadings=[];
   blocks.forEach(block=>{
     if(!block.heading) return;
     // tolerate a manual number the user prefixed, e.g. "1. Sofitel..." or "1) Sofitel..."
     const cleanHeading=block.heading.replace(/^\s*\d+[.\-):]?\s*/,'').trim();
-    const nh=norm(cleanHeading);
-    const s=S.surveys.find(sv=>{ const ns=norm(sv.hotel); return ns && (nh.includes(ns) || ns.includes(nh)); });
-    if(s){ if(!ordered.includes(s)) ordered.push(s); }
+    let best=null, bestScore=0;
+    S.surveys.forEach(sv=>{ if(!(sv.hotel||'').trim()) return; const sc=matchScore(cleanHeading,sv.hotel); if(sc>bestScore){ bestScore=sc; best=sv; } });
+    if(best && bestScore>=0.5){ if(!ordered.includes(best)) ordered.push(best); }
     else unmatchedHeadings.push(cleanHeading);
   });
   const noCoordHotels=[];
@@ -1800,7 +1803,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.48.0';
+const APP_VERSION='1.48.1';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
