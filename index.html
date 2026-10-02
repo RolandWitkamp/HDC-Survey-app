@@ -474,7 +474,12 @@ function valueText(s,f){
 }
 
 /* ---------- Views ---------- */
-function setBar(html){ $('#bar').innerHTML=html+(view.name==='docs'?'':`<button class="icon-btn" data-a="docs" aria-label="Policy document">${ICON.book}</button>`); }
+function setBar(html){
+  const home=(view.name==='home'?'':`<button class="icon-btn" data-a="home" aria-label="Home">${ICON.mark}</button>`);
+  const extras=(view.name==='docs'?'':`<button class="icon-btn" data-a="docs" aria-label="Policy document">${ICON.book}</button>`)
+    +(view.name==='settings'?'':`<button class="icon-btn" data-a="settings" aria-label="Settings">${ICON.settings}</button>`);
+  $('#bar').innerHTML=home+html+extras;
+}
 function setDock(html){ const d=$('#dock'); if(!html){d.hidden=true;return;} d.hidden=false; $('#dockIn').innerHTML=html; }
 function editDockHTML(s){
   const remaining=TOTAL-doneCount(s);
@@ -507,7 +512,7 @@ async function tryUnlock(){
 }
 
 function renderHome(){
-  setBar(`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span><button class="icon-btn" data-a="settings" aria-label="Settings">${ICON.settings}</button>`);
+  setBar(`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`);
   const list=[...S.surveys].sort((a,b)=>(b.updated||0)-(a.updated||0));
   $('#app').innerHTML = list.length ? list.map(s=>{ const v=verdict(s); return `
     <div class="swipe-row">
@@ -1132,6 +1137,8 @@ function renderSettings(){
       <button class="btn wide" style="margin-top:12px" data-a="export">Export all (JSON)</button>
       <label class="btn wide" style="margin-top:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">Restore backup<input type="file" accept="application/json,.json" data-import style="position:absolute;width:1px;height:1px;opacity:0"></label>
       <p class="hint" style="margin-top:10px">Restoring adds surveys and overwrites surveys with the same ID. This also lets you load surveys from a colleague.</p></section>
+    <section class="panel"><h2>All reports</h2><p class="hint">Generate a PDF report for every survey at once, and share or save them all in a single step.</p>
+      <button class="btn wide" style="margin-top:12px" data-a="exportallpdfs">Export all as PDF</button></section>
     <button type="button" data-a="versiontap" class="hint" style="display:block;width:100%;text-align:center;border:0;background:none">Version ${APP_VERSION}${navigator.onLine?'':' · offline'}</button>`;
   setDock('');
 }
@@ -1421,6 +1428,7 @@ document.addEventListener('click', async e=>{
   else if(a==='savepdf') savePdf(s);
   else if(a==='saveword') saveWord(s);
   else if(a==='export') exportAll();
+  else if(a==='exportallpdfs') exportAllPdfs();
   else if(a==='docs'){ const from={...view}; view={name:'docs', from}; render(); }
   else if(a==='docsback'){ view=view.from||{name:'home'}; render(); }
   else if(a==='versiontap'){
@@ -1567,6 +1575,26 @@ function fetchMapImageDataUrl(url){
     .then(blob=>new Promise(resolve=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=()=>resolve(null); r.readAsDataURL(blob); }))
     .catch(()=>null);
 }
+function staticMapUrlMulti(hotels,airport){
+  const params=['size=640x400','scale=2','maptype=roadmap','format=png'];
+  hotels.forEach((h,i)=>{ params.push(`markers=color:0x0EA5E9${i<9?`|label:${i+1}`:''}|${h.lat},${h.lon}`); });
+  if(airport) params.push(`markers=color:0x13233A|label:A|${airport.lat},${airport.lon}`);
+  params.push(`key=${encodeURIComponent(S.googleMapsKey)}`);
+  return `https://maps.googleapis.com/maps/api/staticmap?${params.join('&')}`;
+}
+async function getSummaryMapDataUrl(){
+  if(!S.googleMapsKey || !navigator.onLine) return null;
+  const matched=S.surveys.filter(s=>(s.hotel||'').trim() && S.summary.includes(s.hotel.trim()) && s.hotelLat!=null && s.hotelLon!=null);
+  if(!matched.length) return null;
+  const codeCounts={};
+  matched.forEach(s=>{ const c=(s.city||'').trim().toUpperCase(); if(c.length===3) codeCounts[c]=(codeCounts[c]||0)+1; });
+  const bestCode=Object.keys(codeCounts).sort((a,b)=>codeCounts[b]-codeCounts[a])[0];
+  if(!bestCode) return null;
+  const airports=await loadAirportsData(); const airport=airports?findAirportByIata(airports,bestCode):null;
+  if(!airport||airport.lat==null) return null;
+  const hotels=matched.map(s=>({lat:s.hotelLat,lon:s.hotelLon}));
+  return await fetchMapImageDataUrl(staticMapUrlMulti(hotels,airport));
+}
 async function getHotelMapDataUrl(s){
   if(!S.googleMapsKey || !navigator.onLine || s.hotelLat==null || s.hotelLon==null) return null;
   const code=(s.city||'').trim(); if(code.length!==3) return null;
@@ -1645,7 +1673,7 @@ function makePdf(s,mapDataUrl){
 }
 const pdfName = s=>`Pillow Report ${title(s).replace(/[\\/:*?"<>|]/g,'')} ${s.city||''} ${s.date||''}.pdf`.replace(/\s+/g,' ');
 
-function makeSummaryPdf(){
+function makeSummaryPdf(mapDataUrl){
   if(!window.jspdf) throw new Error('nolib');
   const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); const W=210,H=297,M=16,CW=W-2*M; let y=0;
   const setF=(size,style='normal',col=INK)=>{ doc.setFont('helvetica',style); doc.setFontSize(size); doc.setTextColor(...col); };
@@ -1702,6 +1730,17 @@ function makeSummaryPdf(){
       }
       lastType=item.type;
     });
+    if(mapDataUrl && block.heading.trim().toLowerCase()==='location'){
+      const mapW=CW, mapH=mapW*400/640;
+      if(y+mapH+10>H-M-6){ doc.addPage(); y=M; }
+      y+=4;
+      try{
+        doc.addImage(mapDataUrl,'PNG',M,y,mapW,mapH);
+        y+=mapH+4;
+        setF(8,'normal',MUTED); doc.text('Numbered markers = hotels, A = airport',M,y);
+        y+=8;
+      }catch(e){}
+    }
   });
 
   const n=doc.getNumberOfPages();
@@ -1709,7 +1748,8 @@ function makeSummaryPdf(){
   return doc.output('blob');
 }
 async function exportSummaryPdf(){
-  let blob; try{ blob=makeSummaryPdf(); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
+  const mapDataUrl=await getSummaryMapDataUrl();
+  let blob; try{ blob=makeSummaryPdf(mapDataUrl); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
   const name=`Pillow Report Summary ${today()}.pdf`;
   if(downloads){ try{ await downloads.save({filename:name,data:blob}); toast('PDF saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here.'); } return; }
   const file=new File([blob],name,{type:'application/pdf'});
@@ -1731,7 +1771,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.44.0';
+const APP_VERSION='1.46.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -1796,6 +1836,25 @@ async function exportAll(){
   const file=new File([data],`hotel-surveys-${today()}.json`,{type:'application/json'});
   if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); return; }catch(e){ if(e.name==='AbortError') return; } }
   const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=file.name; document.body.appendChild(a); a.click(); a.remove();
+}
+async function exportAllPdfs(){
+  if(!S.surveys.length) return toast('No surveys to export yet.');
+  if(!window.jspdf) return toast('Could not create PDFs: the PDF library did not load. Check your connection.');
+  toast(`Generating ${S.surveys.length} PDF${S.surveys.length===1?'':'s'}…`);
+  const files=[];
+  for(const s of S.surveys){
+    try{
+      const mapDataUrl=await getHotelMapDataUrl(s);
+      const blob=makePdf(s,mapDataUrl);
+      files.push(new File([blob],pdfName(s),{type:'application/pdf'}));
+    }catch(e){}
+  }
+  if(!files.length) return toast('Could not create any PDFs.');
+  if(navigator.canShare?.({files})){
+    try{ await shareGuard({files}); return; }catch(e){ if(e.name==='AbortError') return; }
+  }
+  files.forEach(file=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=file.name; document.body.appendChild(a); a.click(); a.remove(); });
+  toast(`${files.length} PDF${files.length===1?'':'s'} downloaded`);
 }
 
 /* ---------- Boot ---------- */
