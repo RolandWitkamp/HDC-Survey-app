@@ -1584,18 +1584,22 @@ function staticMapUrlMulti(hotels,airport){
 }
 async function getSummaryMapDataUrl(){
   if(!S.googleMapsKey || !navigator.onLine) return null;
-  const candidates=S.surveys.filter(s=>(s.hotel||'').trim() && S.summary.includes(s.hotel.trim()));
-  for(const s of candidates){
+  const blocks=parseSummaryBlocks();
+  const ordered=[];
+  blocks.forEach(block=>{
+    if(!block.heading) return;
+    // tolerate a manual number the user prefixed, e.g. "1. Sofitel..." or "1) Sofitel..."
+    const cleanHeading=block.heading.replace(/^\s*\d+[.\-):]?\s*/,'').trim().toLowerCase();
+    const s=S.surveys.find(sv=>(sv.hotel||'').trim() && cleanHeading.includes(sv.hotel.trim().toLowerCase()));
+    if(s && !ordered.includes(s)) ordered.push(s);
+  });
+  for(const s of ordered){
     if(s.hotelLat==null || s.hotelLon==null){
       const q=(s.address||'').trim() || s.hotel.trim();
       try{ const loc=await geocode(q); if(loc){ s.hotelLat=loc.lat; s.hotelLon=loc.lon; persist(); } }catch(e){}
     }
   }
-  const matched=candidates
-    .filter(s=>s.hotelLat!=null && s.hotelLon!=null)
-    .map(s=>({s, idx:S.summary.indexOf(s.hotel.trim())}))
-    .sort((a,b)=>a.idx-b.idx)
-    .map(x=>x.s);
+  const matched=ordered.filter(s=>s.hotelLat!=null && s.hotelLon!=null);
   if(!matched.length) return null;
   const codeCounts={};
   matched.forEach(s=>{ const c=(s.city||'').trim().toUpperCase(); if(c.length===3) codeCounts[c]=(codeCounts[c]||0)+1; });
@@ -1684,13 +1688,8 @@ function makePdf(s,mapDataUrl){
 }
 const pdfName = s=>`Pillow Report ${title(s).replace(/[\\/:*?"<>|]/g,'')} ${s.city||''} ${s.date||''}.pdf`.replace(/\s+/g,' ');
 
-function makeSummaryPdf(mapDataUrl){
-  if(!window.jspdf) throw new Error('nolib');
-  const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); const W=210,H=297,M=16,CW=W-2*M; let y=0;
-  const setF=(size,style='normal',col=INK)=>{ doc.setFont('helvetica',style); doc.setFontSize(size); doc.setTextColor(...col); };
-  const HEAD_SIZE=14, POINT_SIZE=10.5, PARA_SIZE=10, LINE_H=5, PARA_LINE_H=4.6;
-
-  // Parse into one block per hotel. A line ending in ":" (and not a bullet) starts a new hotel;
+function parseSummaryBlocks(){
+  // One block per hotel. A line ending in ":" (and not a bullet) starts a new hotel;
   // + / - lines are bullets; anything else is paragraph text under the current hotel.
   const blocks=[]; let blk=null;
   (S.summary||'').split('\n').forEach(raw=>{
@@ -1702,6 +1701,14 @@ function makeSummaryPdf(mapDataUrl){
     if(isPlus||isMinus) blk.items.push({type:'point', sign:isPlus?'+':'-', text:line.slice(1).trim()});
     else blk.items.push({type:'para', text:line});
   });
+  return blocks;
+}
+function makeSummaryPdf(mapDataUrl){
+  if(!window.jspdf) throw new Error('nolib');
+  const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); const W=210,H=297,M=16,CW=W-2*M; let y=0;
+  const setF=(size,style='normal',col=INK)=>{ doc.setFont('helvetica',style); doc.setFontSize(size); doc.setTextColor(...col); };
+  const HEAD_SIZE=14, POINT_SIZE=10.5, PARA_SIZE=10, LINE_H=5, PARA_LINE_H=4.6;
+  const blocks=parseSummaryBlocks();
 
   const headerSub=[S.summaryCity,dateNL(today()),S.summaryInspectors?'Surveyed by '+S.summaryInspectors:''].filter(Boolean).join('   |   ');
   doc.setFillColor(...KLMBLUE); doc.rect(0,0,W,36,'F');
@@ -1782,7 +1789,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.47.0';
+const APP_VERSION='1.47.1';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
