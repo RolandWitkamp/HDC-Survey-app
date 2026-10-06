@@ -1814,7 +1814,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.49.0';
+const APP_VERSION='1.50.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -1828,73 +1828,83 @@ async function savePdf(s){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=pdfName(s); document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
 
-const wordName = s=>pdfName(s).replace(/\.pdf$/i,'.doc');
-function makeWordHtml(s){
+const wordName = s=>pdfName(s).replace(/\.pdf$/i,'.rtf');
+/* RTF (Rich Text Format): unlike the old HTML-renamed-to-.doc trick, this is a real format
+   both Microsoft Word and Apple Pages open natively. */
+function rtfEsc(text){
+  let out='';
+  for(const ch of String(text??'')){
+    const code=ch.codePointAt(0);
+    if(ch==='\\') out+='\\\\';
+    else if(ch==='{') out+='\\{';
+    else if(ch==='}') out+='\\}';
+    else if(ch==='\n') out+='\\par ';
+    else if(code<128) out+=ch;
+    else { const signed=code>32767?code-65536:code; out+=`\\u${signed}?`; }
+  }
+  return out;
+}
+const RTF_HEAD='{\\rtf1\\ansi\\ansicpg1252\\deff0\n{\\fonttbl{\\f0\\fswiss Calibri;}}\n{\\colortbl;\\red19\\green35\\blue58;\\red31\\green122\\blue92;\\red194\\green65\\blue59;\\red91\\green107\\blue128;\\red136\\green136\\blue136;}\n\\f0\n';
+function makeWordRtf(s){
   const fl=flags(s), avg=avgScore(s);
-  const row=f=>{ if(f.id==='otherInfo') return '';
-    const flagged=isFlag(s,f), val=valueText(s,f)||'-', note=s.notes[f.id]?` <i>(${esc(s.notes[f.id])})</i>`:'';
-    const col=flagged?'color:#C2413B;font-weight:bold;':'';
-    return `<tr><td style="padding:4px 8px;border:1px solid #ccc;${col}">${esc(f.label)}</td><td style="padding:4px 8px;border:1px solid #ccc;${col}">${esc(val).replace(/\n/g,'<br>')}${note}</td></tr>`; };
-  const sections=SECTIONS.map(sec=>{ const cv=sectionCompliance(s,sec);
-    const cc=cv==='Non-compliant'?'#C2413B':cv==='Compliant'?'#1F7A5C':'#5B6B80';
-    return `<h2 style="color:#13233A;font-family:Calibri,Arial,sans-serif;font-size:14pt;">${esc(sec.name)} <span style="font-size:11pt;font-weight:normal;color:${cc}">(${esc(cv)})</span></h2>
-      <table style="border-collapse:collapse;width:100%;font-family:Calibri,Arial,sans-serif;font-size:10.5pt;margin-bottom:18px;">${sec.fields.map(row).join('')}</table>`; }).join('');
-  const findings = fl.length ? `<ul>${fl.map(f=>`<li><b>${esc(f.label)}</b>: ${esc(valueText(s,f))}${s.notes[f.id]?' — '+esc(s.notes[f.id]):''}</li>`).join('')}</ul>` : '<p>No findings.</p>';
-  const other = nonEmpty(s.f.otherInfo) ? `<h2 style="font-family:Calibri,Arial,sans-serif;">Other information</h2><p style="font-family:Calibri,Arial,sans-serif;">${esc(s.f.otherInfo).replace(/\n/g,'<br>')}</p>` : '';
-  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><title>${esc(title(s))}</title>
-<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
-</head>
-<body style="font-family:Calibri,Arial,sans-serif;">
-<h1 style="color:#13233A;">${esc(title(s))}</h1>
-<p>${esc([s.city,dateNL(s.date),s.reps,s.inspector].filter(Boolean).join(', '))}</p>
-<p><b>CAO compliant:</b> ${esc(caoText(s))} &nbsp;|&nbsp; <b>${fl.length}</b> finding${fl.length===1?'':'s'}${avg!=null?` &nbsp;|&nbsp; <b>Average score:</b> ${avg.toFixed(1)}/10`:''}</p>
-<h2 style="font-family:Calibri,Arial,sans-serif;">Findings</h2>
-${findings}
-${sections}
-${other}
-<p style="font-size:8pt;color:#888;">made by Pillow Report</p>
-</body></html>`;
+  let body='';
+  body+=`{\\pard\\sa120\\fs32\\b\\cf1 ${rtfEsc(title(s))}\\par}\n`;
+  body+=`{\\pard\\sa160\\fs20 ${rtfEsc([s.city,dateNL(s.date),s.reps,s.inspector].filter(Boolean).join(', '))}\\par}\n`;
+  const capLine=`CAO compliant: ${caoText(s)}   |   ${fl.length} finding${fl.length===1?'':'s'}${avg!=null?`   |   Average score: ${avg.toFixed(1)}/10`:''}`;
+  body+=`{\\pard\\sa200\\fs20\\b ${rtfEsc(capLine)}\\par}\n`;
+  body+=`{\\pard\\sa100\\fs24\\b\\cf1 Findings\\par}\n`;
+  if(fl.length) fl.forEach(f=>{
+    const line=`${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`;
+    body+=`{\\pard\\li240\\sa60\\fs20 \\u8226? ${rtfEsc(line)}\\par}\n`;
+  }); else body+=`{\\pard\\sa200\\fs20 No findings.\\par}\n`;
+  SECTIONS.forEach(sec=>{
+    const cv=sectionCompliance(s,sec); const cIdx=cv==='Non-compliant'?3:cv==='Compliant'?2:4;
+    body+=`{\\pard\\sb200\\sa100\\fs24\\b\\cf1 ${rtfEsc(sec.name)}  \\fs18\\b0\\cf${cIdx} (${rtfEsc(cv)})\\par}\n`;
+    sec.fields.forEach(f=>{
+      if(f.id==='otherInfo') return;
+      const flagged=isFlag(s,f), val=valueText(s,f)||'-', note=s.notes[f.id]?` (${s.notes[f.id]})`:'';
+      body+=`{\\pard\\sa60\\fs20${flagged?'\\cf3\\b':''} ${rtfEsc(f.label)}: ${rtfEsc(val)}${rtfEsc(note)}\\par}\n`;
+    });
+  });
+  if(nonEmpty(s.f.otherInfo)){
+    body+=`{\\pard\\sb200\\sa100\\fs24\\b\\cf1 Other information\\par}\n`;
+    body+=`{\\pard\\sa200\\fs20 ${rtfEsc(s.f.otherInfo)}\\par}\n`;
+  }
+  body+=`{\\pard\\sb300\\fs16\\cf5 made by Pillow Report\\par}\n`;
+  return RTF_HEAD+body+'}';
 }
 async function saveWord(s){
-  const blob=new Blob(['﻿'+makeWordHtml(s)],{type:'application/msword'});
+  const blob=new Blob([makeWordRtf(s)],{type:'application/rtf'});
   if(downloads){ try{ await downloads.save({filename:wordName(s),data:blob}); toast('Word document saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here. Use Share instead.'); } return; }
-  const file=new File([blob],wordName(s),{type:'application/msword'});
+  const file=new File([blob],wordName(s),{type:'application/rtf'});
   if(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)){
     if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); }catch(e){} return; }
   }
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=wordName(s); document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
-function makeSummaryWordHtml(){
+function makeSummaryRtf(){
   const blocks=parseSummaryBlocks();
-  const headerSub=[S.summaryCity,dateNL(today()),S.summaryInspectors?'Surveyed by '+S.summaryInspectors:''].filter(Boolean).join(' | ');
-  const body=blocks.map(block=>{
-    const heading=block.heading?`<h2 style="color:#13233A;font-family:Calibri,Arial,sans-serif;font-size:14pt;border-bottom:2px solid #00A1DE;padding-bottom:4px;">${esc(block.heading)}</h2>`:'';
-    const items=block.items.map(item=>{
+  const headerSub=[S.summaryCity,dateNL(today()),S.summaryInspectors?'Surveyed by '+S.summaryInspectors:''].filter(Boolean).join('   |   ');
+  let body='';
+  body+=`{\\pard\\sa80\\fs32\\b\\cf1 Hotel Summary${S.summaryCity?' \\u8212? '+rtfEsc(S.summaryCity):''}\\par}\n`;
+  body+=`{\\pard\\sa240\\fs20 ${rtfEsc(headerSub)}\\par}\n`;
+  blocks.forEach(block=>{
+    if(block.heading) body+=`{\\pard\\sb200\\sa80\\fs24\\b\\cf1 ${rtfEsc(block.heading)}\\par}\n`;
+    block.items.forEach(item=>{
       if(item.type==='point'){
-        const col=item.sign==='+'?'#1F7A5C':'#C2413B';
-        return `<p style="font-family:Calibri,Arial,sans-serif;font-size:10.5pt;margin:4px 0;"><span style="color:${col};font-weight:bold;">${item.sign}</span> ${esc(item.text)}</p>`;
-      }
-      return `<p style="font-family:Calibri,Arial,sans-serif;font-size:10pt;color:#5B6B80;margin:8px 0;">${esc(item.text)}</p>`;
-    }).join('');
-    return `<div style="margin-bottom:22px;">${heading}${items}</div>`;
-  }).join('');
-  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><title>Hotel Summary</title>
-<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
-</head>
-<body style="font-family:Calibri,Arial,sans-serif;">
-<h1 style="color:#13233A;">Hotel Summary${S.summaryCity?' — '+esc(S.summaryCity):''}</h1>
-<p>${esc(headerSub)}</p>
-${body}
-<p style="font-size:8pt;color:#888;">made by Pillow Report</p>
-</body></html>`;
+        const cIdx=item.sign==='+'?2:3;
+        body+=`{\\pard\\li240\\sa40\\fs20\\cf${cIdx}\\b ${item.sign}\\b0\\cf0  ${rtfEsc(item.text)}\\par}\n`;
+      } else body+=`{\\pard\\sa80\\fs20\\cf4 ${rtfEsc(item.text)}\\par}\n`;
+    });
+  });
+  body+=`{\\pard\\sb300\\fs16\\cf5 made by Pillow Report\\par}\n`;
+  return RTF_HEAD+body+'}';
 }
 async function exportSummaryWord(){
-  const blob=new Blob(['﻿'+makeSummaryWordHtml()],{type:'application/msword'});
-  const name=`Pillow Report Summary ${today()}.doc`;
+  const blob=new Blob([makeSummaryRtf()],{type:'application/rtf'});
+  const name=`Pillow Report Summary ${today()}.rtf`;
   if(downloads){ try{ await downloads.save({filename:name,data:blob}); toast('Word document saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here.'); } return; }
-  const file=new File([blob],name,{type:'application/msword'});
+  const file=new File([blob],name,{type:'application/rtf'});
   if(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)){
     if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); }catch(e){} return; }
   }
@@ -1940,8 +1950,8 @@ async function exportAllWord(){
   const files=[];
   for(const s of S.surveys){
     try{
-      const blob=new Blob(['﻿'+makeWordHtml(s)],{type:'application/msword'});
-      files.push(new File([blob],wordName(s),{type:'application/msword'}));
+      const blob=new Blob([makeWordRtf(s)],{type:'application/rtf'});
+      files.push(new File([blob],wordName(s),{type:'application/rtf'}));
     }catch(e){}
   }
   if(!files.length) return toast('Could not create any Word documents.');
