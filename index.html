@@ -1352,15 +1352,21 @@ document.addEventListener('click', async e=>{
   else if(a==='settings'){view={name:'settings'};render();}
   else if(a==='summary'){view={name:'summary'};render();}
   else if(a==='exportsummary'){
-    showModal(`<h2>Export summary</h2><p>Choose a format.</p>
+    showModal(`<h2>Export summary</h2><p>Choose a style and format.</p>
       <div class="actions">
+        <p class="hint" style="margin:0">Bullet style (+/- points)</p>
         <button type="button" class="btn primary" data-a="exportsummarypdf">PDF</button>
         <button type="button" class="btn" data-a="exportsummaryword">Word document (editable)</button>
+        <p class="hint" style="margin:10px 0 0">Classic trip report (travel details filled in by hand)</p>
+        <button type="button" class="btn primary" data-a="exportclassicpdf">PDF</button>
+        <button type="button" class="btn" data-a="exportclassicword">Word document (editable)</button>
         <button type="button" class="btn" data-a="modalcancel">Cancel</button>
       </div>`);
   }
   else if(a==='exportsummarypdf'){ hideModal(); exportSummaryPdf(); }
   else if(a==='exportsummaryword'){ hideModal(); exportSummaryWord(); }
+  else if(a==='exportclassicpdf'){ hideModal(); exportClassicPdf(); }
+  else if(a==='exportclassicword'){ hideModal(); exportClassicWord(); }
   else if(a==='new'){
     const n={id:uid(),hotel:'',address:'',city:'',reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''}};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
@@ -1593,23 +1599,25 @@ function staticMapUrlMulti(hotels,airport){
   params.push(`key=${encodeURIComponent(S.googleMapsKey)}`);
   return `https://maps.googleapis.com/maps/api/staticmap?${params.join('&')}`;
 }
-async function getSummaryMapDataUrl(){
-  if(!S.googleMapsKey || !navigator.onLine) return null;
+function matchSummaryBlocksToSurveys(){
   const norm=t=>(t||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
   const wordSet=t=>new Set(norm(t).split(' ').filter(Boolean));
   const matchScore=(a,b)=>{ const wa=wordSet(a), wb=wordSet(b); if(!wa.size||!wb.size) return 0;
     let common=0; wa.forEach(w=>{ if(wb.has(w)) common++; }); return common/Math.min(wa.size,wb.size); };
   const blocks=parseSummaryBlocks();
-  const ordered=[]; const unmatchedHeadings=[];
-  blocks.forEach(block=>{
-    if(!block.heading) return;
+  return blocks.filter(b=>b.heading).map(block=>{
     // tolerate a manual number the user prefixed, e.g. "1. Sofitel..." or "1) Sofitel..."
     const cleanHeading=block.heading.replace(/^\s*\d+[.\-):]?\s*/,'').trim();
     let best=null, bestScore=0;
     S.surveys.forEach(sv=>{ if(!(sv.hotel||'').trim()) return; const sc=matchScore(cleanHeading,sv.hotel); if(sc>bestScore){ bestScore=sc; best=sv; } });
-    if(best && bestScore>=0.5){ if(!ordered.includes(best)) ordered.push(best); }
-    else unmatchedHeadings.push(cleanHeading);
+    return {heading:cleanHeading, block, survey:(bestScore>=0.5?best:null)};
   });
+}
+async function getSummaryMapDataUrl(){
+  if(!S.googleMapsKey || !navigator.onLine) return null;
+  const matches=matchSummaryBlocksToSurveys();
+  const ordered=[]; const unmatchedHeadings=[];
+  matches.forEach(m=>{ if(m.survey){ if(!ordered.includes(m.survey)) ordered.push(m.survey); } else unmatchedHeadings.push(m.heading); });
   const noCoordHotels=[];
   for(const s of ordered){
     if(s.hotelLat==null || s.hotelLon==null){
@@ -1802,6 +1810,126 @@ async function exportSummaryPdf(){
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
 
+/* ---------- Summary: classic trip-report layout (travel logistics filled in by hand) ---------- */
+const CLASSIC_ROWS=[
+  {label:'General', secId:'general'},
+  {label:'Facilities', secId:'facilities'},
+  {label:'Location', secId:'location'},
+  {label:'Safety & Security', secId:'security'},
+  {label:'Room Safety', secId:'roomSafety'},
+  {label:'Rooms General', secId:'rooms'},
+  {label:'Noise', secId:'noise'},
+  {label:'CLA compliant', secId:'cao'},
+];
+function classicMark(s,secId){
+  if(!s) return {mark:'-', kind:'na'};
+  if(secId==='cao'){ const t=caoText(s); if(t==='Yes') return {mark:'V',kind:'ok'}; if(t==='No') return {mark:'X',kind:'bad'}; return {mark:'-',kind:'na'}; }
+  const sec=SECTIONS.find(x=>x.id===secId); if(!sec) return {mark:'-',kind:'na'};
+  const cv=sectionCompliance(s,sec);
+  if(cv==='Compliant') return {mark:'V',kind:'ok'};
+  if(cv==='Non-compliant') return {mark:'X',kind:'bad'};
+  return {mark:'-',kind:'na'};
+}
+const classicMarkColor = kind=>kind==='ok'?GREEN:kind==='bad'?RED:MUTED;
+const classicMarkCf = kind=>kind==='ok'?2:kind==='bad'?3:4;
+const classicDescription = block=>block.items.filter(i=>i.type==='para').map(i=>i.text).join(' ');
+function pdfGridTable(doc,setF,x,y,colWidths,rows,rowH=7){
+  doc.setDrawColor(200,200,200); doc.setLineWidth(0.2);
+  rows.forEach(row=>{
+    let cx=x;
+    row.forEach((cell,ci)=>{
+      doc.rect(cx,y,colWidths[ci],rowH);
+      const text=(cell&&typeof cell==='object')?(cell.text??''):(cell??'');
+      const color=(cell&&typeof cell==='object'&&cell.color)?cell.color:INK;
+      const bold=!!(cell&&typeof cell==='object'&&cell.bold);
+      setF(9,bold?'bold':'normal',color);
+      doc.text(String(text),cx+2,y+rowH/2+2.2);
+      cx+=colWidths[ci];
+    });
+    y+=rowH;
+  });
+  return y;
+}
+function makeClassicPdf(mapDataUrl){
+  if(!window.jspdf) throw new Error('nolib');
+  const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); const W=210,H=297,M=16,CW=W-2*M; let y=0;
+  const setF=(size,style='normal',col=INK)=>{ doc.setFont('helvetica',style); doc.setFontSize(size); doc.setTextColor(...col); };
+  const ensure=h=>{ if(y+h>H-M-6){ doc.addPage(); y=M; } };
+  const matches=matchSummaryBlocksToSurveys();
+
+  doc.setFillColor(...KLMBLUE); doc.rect(0,0,W,36,'F');
+  setF(9,'bold',[170,190,215]); doc.text('PILLOW REPORT',M,12);
+  setF(18,'bold',[255,255,255]); doc.text(S.summaryCity?`Hotel Survey Report — ${S.summaryCity}`:'Hotel Survey Report',M,24);
+  setF(9,'normal',[200,212,228]); doc.text(dateNL(today()),M,30);
+  y=48;
+
+  setF(10,'bold',INK); doc.text('Survey date: -',M,y); y+=9;
+  setF(10,'bold',INK); doc.text('Surveying party: -',M,y);
+  setF(10,'normal',MUTED); doc.text('(SPL/NI)',M+50,y); y+=6; doc.text('(HoDaCo)',M+50,y); y+=12;
+
+  setF(11,'bold',INK); doc.text('Flight schedule:',M,y); y+=5;
+  y=pdfGridTable(doc,setF,M,y,[24,30,24,24,30,CW-132],[
+    ['Flight nr.','Date','from','to','Dep. time','Arr. time'].map(t=>({text:t,bold:true})),
+    ['','','','','',''],['','','','','',''],['','','','','','']]);
+  y+=10;
+
+  setF(11,'bold',INK); doc.text('Overnight stay:',M,y); y+=5;
+  y=pdfGridTable(doc,setF,M,y,[40,CW-40],[[{text:'Date',bold:true},{text:'Hotel',bold:true}],['',''],['',''],['','']]);
+  y+=10;
+
+  ensure(60);
+  setF(11,'bold',INK); doc.text('Survey schedule:',M,y); y+=5;
+  const scheduleRows=[[{text:'Date',bold:true},{text:'Hotel',bold:true},{text:'Representative',bold:true}]];
+  matches.forEach(m=>scheduleRows.push([m.survey?dateNL(m.survey.date):'', m.heading, (m.survey&&(m.survey.inspector||m.survey.reps))||'']));
+  while(scheduleRows.length<4) scheduleRows.push(['','','']);
+  y=pdfGridTable(doc,setF,M,y,[28,64,CW-92],scheduleRows);
+
+  doc.addPage(); y=M;
+  setF(14,'bold',INK); doc.text('Destination city map',M,y); y+=10;
+  if(mapDataUrl){
+    const mapW=CW, mapH=mapW*400/640;
+    try{ doc.addImage(mapDataUrl,'PNG',M,y,mapW,mapH); y+=mapH+10; }catch(e){ y+=6; }
+  } else {
+    setF(9,'normal',MUTED);
+    const note=doc.splitTextToSize('(No map available — add a Google Maps API key in Settings, or add a screenshot of the destination city here.)',CW);
+    doc.text(note,M,y); y+=note.length*5+10;
+  }
+
+  ensure(24);
+  setF(14,'bold',INK); doc.text('Reason survey',M,y); y+=16;
+
+  matches.forEach(m=>{
+    ensure(75); y+=4;
+    setF(14,'bold',INK); doc.text(m.heading,M,y); y+=8;
+    const rows=CLASSIC_ROWS.map(r=>{ const cm=classicMark(m.survey,r.secId); return [r.label,{text:cm.mark,color:classicMarkColor(cm.kind),bold:true}]; });
+    y=pdfGridTable(doc,setF,M,y,[60,CW-60],rows);
+    y+=6;
+    const desc=classicDescription(m.block)||'Short description of hotel visit with impression and observations.';
+    setF(10,'normal',classicDescription(m.block)?INK:MUTED);
+    const wrapped=doc.splitTextToSize(desc,CW); const h=wrapped.length*5+4;
+    if(y+h>H-M-6){ doc.addPage(); y=M; }
+    doc.text(wrapped,M,y); y+=h+8;
+  });
+
+  ensure(30);
+  setF(14,'bold',INK); doc.text('Hodaco advice:',M,y); y+=14;
+
+  const n=doc.getNumberOfPages();
+  for(let i=1;i<=n;i++){ doc.setPage(i); setF(8,'normal',[140,150,165]); doc.text('made by Pillow Report',W/2,H-8,{align:'center'}); doc.text(`${i} / ${n}`,W-M,H-8,{align:'right'}); }
+  return doc.output('blob');
+}
+async function exportClassicPdf(){
+  const mapDataUrl=await getSummaryMapDataUrl();
+  let blob; try{ blob=makeClassicPdf(mapDataUrl); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
+  const name=`Pillow Report Trip Report ${today()}.pdf`;
+  if(downloads){ try{ await downloads.save({filename:name,data:blob}); toast('PDF saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here.'); } return; }
+  const file=new File([blob],name,{type:'application/pdf'});
+  if(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)){
+    if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); }catch(e){} return; }
+  }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+
 async function sharePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
   let blob; try{ blob=makePdf(s,mapDataUrl); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
@@ -1814,7 +1942,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.50.0';
+const APP_VERSION='1.51.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -1903,6 +2031,69 @@ function makeSummaryRtf(){
 async function exportSummaryWord(){
   const blob=new Blob([makeSummaryRtf()],{type:'application/rtf'});
   const name=`Pillow Report Summary ${today()}.rtf`;
+  if(downloads){ try{ await downloads.save({filename:name,data:blob}); toast('Word document saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here.'); } return; }
+  const file=new File([blob],name,{type:'application/rtf'});
+  if(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)){
+    if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); }catch(e){} return; }
+  }
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+function rtfTableRow(cells,colWidths){
+  let out='\\trowd\\trgaph60', x=0;
+  colWidths.forEach(w=>{ x+=w; out+=`\\cellx${x}`; });
+  cells.forEach(cell=>{
+    const text=(cell&&typeof cell==='object')?(cell.text??''):(cell??'');
+    const cf=(cell&&typeof cell==='object'&&cell.cf)?cell.cf:0;
+    const bold=!!(cell&&typeof cell==='object'&&cell.bold);
+    out+=`\\intbl${cf?`\\cf${cf}`:''}${bold?'\\b':''} ${rtfEsc(text)}${bold?'\\b0':''}${cf?'\\cf0':''}\\cell`;
+  });
+  return out+'\\row\n';
+}
+function makeClassicRtf(){
+  const matches=matchSummaryBlocksToSurveys();
+  let body='';
+  body+=`{\\pard\\sa80\\fs32\\b\\cf1 Hotel Survey Report${S.summaryCity?' \\u8212? '+rtfEsc(S.summaryCity):''}\\par}\n`;
+  body+=`{\\pard\\sa200\\fs20 ${rtfEsc(dateNL(today()))}\\par}\n`;
+  body+=`{\\pard\\sa60\\fs20\\b Survey date: -\\par}\n`;
+  body+=`{\\pard\\sa20\\fs20\\b Surveying party: -\\b0   (SPL/NI)\\par}\n`;
+  body+=`{\\pard\\sa200\\fs20 \\tab (HoDaCo)\\par}\n`;
+
+  body+=`{\\pard\\sb100\\sa80\\fs22\\b\\cf1 Flight schedule:\\par}\n`;
+  body+=rtfTableRow(['Flight nr.','Date','from','to','Dep. time','Arr. time'].map(t=>({text:t,bold:true})),[1400,1400,1400,1400,1400,1400]);
+  for(let i=0;i<3;i++) body+=rtfTableRow(['','','','','',''],[1400,1400,1400,1400,1400,1400]);
+  body+=`{\\pard\\sa240\\par}\n`;
+
+  body+=`{\\pard\\sb100\\sa80\\fs22\\b\\cf1 Overnight stay:\\par}\n`;
+  body+=rtfTableRow([{text:'Date',bold:true},{text:'Hotel',bold:true}],[2000,6400]);
+  for(let i=0;i<3;i++) body+=rtfTableRow(['',''],[2000,6400]);
+  body+=`{\\pard\\sa240\\par}\n`;
+
+  body+=`{\\pard\\sb100\\sa80\\fs22\\b\\cf1 Survey schedule:\\par}\n`;
+  body+=rtfTableRow([{text:'Date',bold:true},{text:'Hotel',bold:true},{text:'Representative',bold:true}],[1600,3800,3000]);
+  matches.forEach(m=>body+=rtfTableRow([m.survey?dateNL(m.survey.date):'', m.heading, (m.survey&&(m.survey.inspector||m.survey.reps))||''],[1600,3800,3000]));
+  if(!matches.length) body+=rtfTableRow(['','',''],[1600,3800,3000]);
+  body+=`{\\pard\\sa300\\par}\n`;
+
+  body+=`{\\pard\\sb100\\sa80\\fs24\\b\\cf1 Destination city map\\par}\n`;
+  body+=`{\\pard\\sa240\\fs18\\i\\cf4 (Add a screenshot of the destination city map here.)\\par}\n`;
+
+  body+=`{\\pard\\sb100\\sa240\\fs24\\b\\cf1 Reason survey\\par}\n`;
+
+  matches.forEach(m=>{
+    body+=`{\\pard\\sb200\\sa80\\fs24\\b\\cf1 ${rtfEsc(m.heading)}\\par}\n`;
+    CLASSIC_ROWS.forEach(r=>{ const cm=classicMark(m.survey,r.secId); body+=rtfTableRow([r.label,{text:cm.mark,bold:true,cf:classicMarkCf(cm.kind)}],[3000,2000]); });
+    body+=`{\\pard\\sa60\\par}\n`;
+    const desc=classicDescription(m.block)||'Short description of hotel visit with impression and observations.';
+    body+=`{\\pard\\sa240\\fs20${classicDescription(m.block)?'':'\\i\\cf4'} ${rtfEsc(desc)}\\par}\n`;
+  });
+
+  body+=`{\\pard\\sb100\\sa240\\fs24\\b\\cf1 Hodaco advice:\\par}\n`;
+  body+=`{\\pard\\sb300\\fs16\\cf5 made by Pillow Report\\par}\n`;
+  return RTF_HEAD+body+'}';
+}
+async function exportClassicWord(){
+  const blob=new Blob([makeClassicRtf()],{type:'application/rtf'});
+  const name=`Pillow Report Trip Report ${today()}.rtf`;
   if(downloads){ try{ await downloads.save({filename:name,data:blob}); toast('Word document saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here.'); } return; }
   const file=new File([blob],name,{type:'application/rtf'});
   if(/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1)){
