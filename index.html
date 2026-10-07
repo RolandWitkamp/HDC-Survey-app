@@ -296,7 +296,7 @@ const SECTIONS = [
     {id:'cctv', label:'CCTV', type:'choice', options:YN, flag:['No']},
     {id:'elevatorKeycard', label:'Elevator keycard guarded', type:'choice', options:YN, flag:['No']},
     {id:'fireRules', label:'Fire safety and security rules and regulations', type:'choice', options:CMP, flag:['Not compliant'], standard:"De geldende Europese wet- en regelgeving, 86/666/EEC, aangaande brandveiligheid dient aangehouden te worden. Maken lokale omstandigheden dit onmogelijk, dan treedt overleg met de SCO in werking om mitigerende maatregelen te treffen."},
-    {id:'fireDrills', label:'Fire drills', type:'select', options:Array.from({length:11},(_,i)=>String(i))},
+    {id:'fireDrills', label:'Number of fire drills per year', type:'select', options:Array.from({length:11},(_,i)=>String(i))},
     {id:'airQuality', label:'Air Quality Protocol', type:'choice', options:YN},
     {id:'airQualityIndex', label:'Air Quality Index (measured)', type:'text', ph:'Wordt automatisch opgehaald'},
     {id:'sustainability', label:'Sustainability program', type:'choice', options:YN}]},
@@ -372,13 +372,13 @@ const DEFAULT_GOOGLE_MAPS_KEY = 'AIzaSyD_Jcqk1ucjFox-22y_4l1v7AOCE9olJFQ';
 const DEFAULT_WAQI_TOKEN = '450eb63d4c903214e7f4c1a644315150a7ff2b25';
 /* SHA-256 hash of the shared lock-screen password, not the password itself. A device can clear/override this via the hidden Settings lock-screen section. */
 const DEFAULT_APP_PASSWORD_HASH = '6f5bbb9cdb88b00a1f67d4fc866eeb90d043e4df836e252796c3a78eb812a309';
-let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true, appPasswordHash:'', summary:'', summaryCity:'', summaryInspectors:'' };
+let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true, appPasswordHash:'', summary:'', summaryCity:'', summaryInspectors:'', summaryFlights:'', summaryReason:'' };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
 let advancedUnlocked = false, versionTaps = 0, versionTapTimer = null;
 let appUnlocked = false;
 let saveTimer=null;
-function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); store.set('appPasswordHash',S.appPasswordHash); store.set('summary',S.summary); store.set('summaryCity',S.summaryCity); store.set('summaryInspectors',S.summaryInspectors); }
+function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); store.set('appPasswordHash',S.appPasswordHash); store.set('summary',S.summary); store.set('summaryCity',S.summaryCity); store.set('summaryInspectors',S.summaryInspectors); store.set('summaryFlights',S.summaryFlights); store.set('summaryReason',S.summaryReason); }
 function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(flushPersist,300); }
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='hidden'){
@@ -1281,6 +1281,8 @@ function renderSummary(){
       <p class="hint">Hotel names from your surveys are added automatically. Type or paste your plus and minus points per hotel — works with text copied from Word, Notes, Google Docs, anything. End a hotel name with a colon (:) to start a new hotel — each one gets its own page in the PDF. Lines starting with + or - become bullet points; any other text becomes a paragraph under that hotel.</p>
       <label class="f">City / airport code (shown in the PDF header)<input id="summaryCity" value="${esc(S.summaryCity)}" placeholder="e.g. Riyadh, RUH"></label>
       <label class="f">Inspector(s) (shown in the PDF header)<input id="summaryInspectors" value="${esc(S.summaryInspectors)}" placeholder="e.g. Witkamp & Snijders"></label>
+      <label class="f">Flight schedule (outbound &amp; return)<textarea class="inp" id="summaryFlights" rows="4" placeholder="${esc('KL123  06-10-2026  AMS-RUH  10:20-18:05\nKL456  10-10-2026  RUH-AMS  20:10-01:45')}">${esc(S.summaryFlights)}</textarea></label>
+      <label class="f">Reason for survey<textarea class="inp" id="summaryReason" rows="3" placeholder="e.g. Scheduled annual survey / new destination / complaint follow-up">${esc(S.summaryReason)}</textarea></label>
       <label class="f" style="margin-top:14px">Summary text</label>
       <textarea class="inp" id="summaryText" rows="18" placeholder="${esc('Hilton Riyadh:\n+ Great location\n+ Friendly staff\n- Noisy AC unit\nA short paragraph with more detail can go here too.\n\nMovenpick Amsterdam:\n+ Spacious rooms\n- Slow check-in')}">${esc(S.summary)}</textarea>
       <label class="add-photo" style="margin-top:12px">📄 Import text file (.txt)<input type="file" accept=".txt,text/plain" id="summaryImport" style="position:absolute;width:1px;height:1px;opacity:0"></label>
@@ -1459,6 +1461,8 @@ document.addEventListener('input', e=>{
   if(el.id==='summaryText'){ S.summary=el.value; persist(); return; }
   if(el.id==='summaryCity'){ S.summaryCity=el.value; persist(); return; }
   if(el.id==='summaryInspectors'){ S.summaryInspectors=el.value; persist(); return; }
+  if(el.id==='summaryFlights'){ S.summaryFlights=el.value; persist(); return; }
+  if(el.id==='summaryReason'){ S.summaryReason=el.value; persist(); return; }
   if(d.k){ const was=s? doneCount(s):0; if(d.k==='driveTime') s.driveTimeAuto=false; if(d.k==='airQualityIndex') s.airQualityAuto=false; s.f[d.k]=el.value; touch(s);
     const fld=FIELD[d.k]; if(fld?.type==='slider'){ const sv=document.querySelector(`[data-sliderval="${d.k}"]`); if(sv) sv.textContent=sliderText(fld,Number(el.value)); }
     const mm=d.k.match(/^mealHours\.(\d+)\.(\d+)\.(from|to)$/);
@@ -1509,6 +1513,8 @@ document.addEventListener('change', async e=>{
       if(typeof d.summary==='string' && d.summary) S.summary=d.summary;
       if(typeof d.summaryCity==='string' && d.summaryCity) S.summaryCity=d.summaryCity;
       if(typeof d.summaryInspectors==='string' && d.summaryInspectors) S.summaryInspectors=d.summaryInspectors;
+      if(typeof d.summaryFlights==='string' && d.summaryFlights) S.summaryFlights=d.summaryFlights;
+      if(typeof d.summaryReason==='string' && d.summaryReason) S.summaryReason=d.summaryReason;
       persist(); toast(`${n} survey${n===1?'':'s'} restored`); render();
     }catch(err){ toast('This file is not a Pillow Report backup.'); }
     el.value=''; return;
@@ -1867,11 +1873,11 @@ function makeClassicPdf(mapDataUrl){
   setF(10,'bold',INK); doc.text('Surveying party: -',M,y);
   setF(10,'normal',MUTED); doc.text('(SPL/NI)',M+50,y); y+=6; doc.text('(HoDaCo)',M+50,y); y+=12;
 
-  setF(11,'bold',INK); doc.text('Flight schedule:',M,y); y+=5;
-  y=pdfGridTable(doc,setF,M,y,[24,30,24,24,30,CW-132],[
-    ['Flight nr.','Date','from','to','Dep. time','Arr. time'].map(t=>({text:t,bold:true})),
-    ['','','','','',''],['','','','','',''],['','','','','','']]);
-  y+=10;
+  setF(11,'bold',INK); doc.text('Flight schedule:',M,y); y+=7;
+  if(S.summaryFlights.trim()){
+    const wrapped=doc.splitTextToSize(S.summaryFlights.trim(),CW); ensure(wrapped.length*5+4);
+    setF(10,'normal',INK); doc.text(wrapped,M,y); y+=wrapped.length*5+8;
+  } else { setF(9,'normal',MUTED); doc.text('-',M,y); y+=14; }
 
   setF(11,'bold',INK); doc.text('Overnight stay:',M,y); y+=5;
   y=pdfGridTable(doc,setF,M,y,[40,CW-40],[[{text:'Date',bold:true},{text:'Hotel',bold:true}],['',''],['',''],['','']]);
@@ -1896,7 +1902,11 @@ function makeClassicPdf(mapDataUrl){
   }
 
   ensure(24);
-  setF(14,'bold',INK); doc.text('Reason survey',M,y); y+=16;
+  setF(14,'bold',INK); doc.text('Reason survey',M,y); y+=10;
+  if(S.summaryReason.trim()){
+    const wrapped=doc.splitTextToSize(S.summaryReason.trim(),CW); ensure(wrapped.length*5+4);
+    setF(10,'normal',INK); doc.text(wrapped,M,y); y+=wrapped.length*5+10;
+  } else y+=6;
 
   matches.forEach(m=>{
     ensure(75); y+=4;
@@ -1942,7 +1952,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.51.0';
+const APP_VERSION='1.52.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2059,9 +2069,7 @@ function makeClassicRtf(){
   body+=`{\\pard\\sa200\\fs20 \\tab (HoDaCo)\\par}\n`;
 
   body+=`{\\pard\\sb100\\sa80\\fs22\\b\\cf1 Flight schedule:\\par}\n`;
-  body+=rtfTableRow(['Flight nr.','Date','from','to','Dep. time','Arr. time'].map(t=>({text:t,bold:true})),[1400,1400,1400,1400,1400,1400]);
-  for(let i=0;i<3;i++) body+=rtfTableRow(['','','','','',''],[1400,1400,1400,1400,1400,1400]);
-  body+=`{\\pard\\sa240\\par}\n`;
+  body+=S.summaryFlights.trim()?`{\\pard\\sa240\\fs20 ${rtfEsc(S.summaryFlights.trim())}\\par}\n`:`{\\pard\\sa240\\fs20\\cf4 -\\par}\n`;
 
   body+=`{\\pard\\sb100\\sa80\\fs22\\b\\cf1 Overnight stay:\\par}\n`;
   body+=rtfTableRow([{text:'Date',bold:true},{text:'Hotel',bold:true}],[2000,6400]);
@@ -2077,7 +2085,8 @@ function makeClassicRtf(){
   body+=`{\\pard\\sb100\\sa80\\fs24\\b\\cf1 Destination city map\\par}\n`;
   body+=`{\\pard\\sa240\\fs18\\i\\cf4 (Add a screenshot of the destination city map here.)\\par}\n`;
 
-  body+=`{\\pard\\sb100\\sa240\\fs24\\b\\cf1 Reason survey\\par}\n`;
+  body+=`{\\pard\\sb100\\sa80\\fs24\\b\\cf1 Reason survey\\par}\n`;
+  body+=S.summaryReason.trim()?`{\\pard\\sa240\\fs20 ${rtfEsc(S.summaryReason.trim())}\\par}\n`:`{\\pard\\sa240\\par}\n`;
 
   matches.forEach(m=>{
     body+=`{\\pard\\sb200\\sa80\\fs24\\b\\cf1 ${rtfEsc(m.heading)}\\par}\n`;
@@ -2110,7 +2119,7 @@ async function exportSurvey(s){
   const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=file.name; document.body.appendChild(a); a.click(); a.remove();
 }
 async function exportAll(){
-  const data=JSON.stringify({surveys:S.surveys,groups:S.groups,defaultRep:S.defaultRep,summary:S.summary,summaryCity:S.summaryCity,summaryInspectors:S.summaryInspectors},null,1);
+  const data=JSON.stringify({surveys:S.surveys,groups:S.groups,defaultRep:S.defaultRep,summary:S.summary,summaryCity:S.summaryCity,summaryInspectors:S.summaryInspectors,summaryFlights:S.summaryFlights,summaryReason:S.summaryReason},null,1);
   if(downloads){ try{ await downloads.save({filename:`hotel-surveys-${today()}.json`,data}); toast('Export saved'); }catch(e){ if(e?.code!=='declined') toast('Exporting does not work here.'); } return; }
   const file=new File([data],`hotel-surveys-${today()}.json`,{type:'application/json'});
   if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); return; }catch(e){ if(e.name==='AbortError') return; } }
@@ -2167,6 +2176,8 @@ async function exportAllWord(){
   S.summary=(await store.get('summary'))||'';
   S.summaryCity=(await store.get('summaryCity'))||'';
   S.summaryInspectors=(await store.get('summaryInspectors'))||'';
+  S.summaryFlights=(await store.get('summaryFlights'))||'';
+  S.summaryReason=(await store.get('summaryReason'))||'';
   if(S.appPasswordHash && !appUnlocked) renderLock(); else render();
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){
