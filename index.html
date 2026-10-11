@@ -376,14 +376,14 @@ const DEFAULT_SUPABASE_URL = 'https://kahmxgxbixryukjoirod.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_qYb6uO8K0HFi-Gfdirx8AA_0jX3duoo';
 const sb = window.supabase ? window.supabase.createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY) : null;
 let sbUser = null;
-let lastPushed = {surveys:{}, groups:{}};
-let pendingDeletes = {surveys:[], groups:[]};
-let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true, summary:'', summaryCity:'', summaryInspectors:'', summaryFlights:'', summaryReason:'' };
+let lastPushed = {surveys:{}, groups:{}, trips:{}};
+let pendingDeletes = {surveys:[], groups:[], trips:[]};
+let S = { surveys:[], groups:[], trips:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
 let advancedUnlocked = false, versionTaps = 0, versionTapTimer = null;
 let saveTimer=null;
-function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); store.set('summary',S.summary); store.set('summaryCity',S.summaryCity); store.set('summaryInspectors',S.summaryInspectors); store.set('summaryFlights',S.summaryFlights); store.set('summaryReason',S.summaryReason); syncNow(); }
+function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('trips',S.trips); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); syncNow(); }
 function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(flushPersist,300); }
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='hidden'){
@@ -412,6 +412,17 @@ function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on
 function showModal(html){ $('#modalPanel').innerHTML=html; $('#modalBackdrop').hidden=false; }
 function hideModal(){ $('#modalBackdrop').hidden=true; $('#modalPanel').innerHTML=''; }
 const cur = ()=>{ const s=S.surveys.find(x=>x.id===view.id); if(s){ s.scores=s.scores||{}; s.compliance=s.compliance||{}; if(s.caoAuto===undefined) s.caoAuto=true; if(s.driveTimeAuto===undefined) s.driveTimeAuto=true; if(s.airQualityAuto===undefined) s.airQualityAuto=true; if(s.address===undefined) s.address=''; } return s; };
+const curTrip = ()=>S.trips.find(x=>x.id===view.id);
+function deleteTrip(trip){
+  const n=S.surveys.filter(x=>x.tripId===trip.id).length;
+  if(!confirm(`Delete this trip${n?` and its ${n} survey${n===1?'':'s'}`:''}? This cannot be undone.`)) return false;
+  S.surveys.filter(x=>x.tripId===trip.id).forEach(x=>pendingDeletes.surveys.push(x.id));
+  S.surveys=S.surveys.filter(x=>x.tripId!==trip.id);
+  pendingDeletes.trips.push(trip.id);
+  S.trips=S.trips.filter(t=>t.id!==trip.id);
+  persist(); toast('Trip deleted');
+  return true;
+}
 const title = s=>s.hotel||'Unnamed hotel';
 const surveyedBy = s=>[s.reps,s.inspector].filter(Boolean).join(' & ');
 const nonEmpty = v=>Array.isArray(v)?v.length>0:(v!=null&&String(v).trim()!=='');
@@ -486,7 +497,7 @@ function editDockHTML(s){
     <label class="btn dock-photo-btn" aria-label="Add photo">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
 }
 function render(){ window.scrollTo(0,0);
-  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,summary:renderSummary,login:renderLogin})[view.name](); }
+  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin})[view.name](); }
 
 function renderLogin(msg){
   $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
@@ -521,26 +532,27 @@ async function doLogout(){
 
 function renderHome(){
   setBar(`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`);
-  const list=[...S.surveys].sort((a,b)=>(b.updated||0)-(a.updated||0));
-  $('#app').innerHTML = list.length ? list.map(s=>{ const v=verdict(s); return `
+  const list=[...S.trips].sort((a,b)=>(b.updated||0)-(a.updated||0));
+  $('#app').innerHTML = list.length ? list.map(t=>{
+    const n=S.surveys.filter(s=>s.tripId===t.id).length;
+    return `
     <div class="swipe-row">
-      <button class="swipe-del" data-a="swipedelete" data-id="${s.id}" aria-label="Delete survey">${ICON.trash}<span>Delete</span></button>
-      <button class="survey-row" data-a="open" data-id="${s.id}">
-        <span class="stamp" data-s="${v.k}" aria-label="${v.w}">${v.t}</span>
-        <span class="t"><b>${esc(title(s))}</b>
-          <span>${esc([s.city,dateNL(s.date)].filter(Boolean).join(', '))} · ${v.w}</span>
-          <span class="status ${s.status==='verzonden'?'sent':''}">${s.status==='verzonden'?'Sent':'Draft'}</span></span>
+      <button class="swipe-del" data-a="swipedeletetrip" data-id="${t.id}" aria-label="Delete trip">${ICON.trash}<span>Delete</span></button>
+      <button class="survey-row" data-a="opentrip" data-id="${t.id}">
+        <span class="stamp" data-s="0">${n}</span>
+        <span class="t"><b>${esc(t.city||'Untitled trip')}</b>
+          <span>${n} survey${n===1?'':'s'}${t.inspectors?' · '+esc(t.inspectors):''}</span></span>
       </button>
     </div>`}).join('') : `
-    <div class="empty"><h2>No surveys yet</h2>
-      <p>Start a survey when you arrive at the hotel. Everything is saved on this device, even offline.</p></div>`;
+    <div class="empty"><h2>No survey trips yet</h2>
+      <p>Add a survey trip when you arrive at a destination, then add a survey per hotel inside it. Everything is saved on this device, even offline.</p></div>`;
   $('#app').innerHTML += `<div class="home-foot">${ICON.mark}</div>`;
-  setDock(`<button class="btn primary" data-a="new">New survey</button><button class="btn" data-a="summary">Summary</button>`);
+  setDock(`<button class="btn primary" data-a="new">+ New survey trip</button>`);
 }
 
 function renderEdit(){
   const s=cur(); if(!s){view={name:'home'};return render();}
-  setBar(`<button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>${esc(title(s))}</h1><button class="icon-btn" data-a="sharesurvey" aria-label="Export survey (backup)">${ICON.share}</button><button class="icon-btn" data-a="savephotos" aria-label="Save photos to library">${ICON.image}</button><button class="icon-btn" data-a="delete" aria-label="Delete survey">${ICON.trash}</button>`);
+  setBar(`<button class="icon-btn" data-a="back-trip" aria-label="Back">←</button><h1>${esc(title(s))}</h1><button class="icon-btn" data-a="sharesurvey" aria-label="Export survey (backup)">${ICON.share}</button><button class="icon-btn" data-a="savephotos" aria-label="Save photos to library">${ICON.image}</button><button class="icon-btn" data-a="delete" aria-label="Delete survey">${ICON.trash}</button>`);
   const v=verdict(s);
   $('#app').innerHTML = `
     <section class="panel">
@@ -1272,25 +1284,46 @@ function renderDocs(){
   setDock('');
 }
 
-function syncSummaryHotelNames(){
-  const names=S.surveys.filter(s=>(s.hotel||'').trim()).map(s=>s.hotel.trim());
-  const missing=[...new Set(names)].filter(name=>!S.summary.includes(name));
-  if(missing.length){ S.summary=(S.summary?S.summary.replace(/\s+$/,'')+'\n\n':'')+missing.map(n=>n+':').join('\n\n'); persist(); }
+function syncTripHotelNames(trip){
+  const names=S.surveys.filter(s=>s.tripId===trip.id && (s.hotel||'').trim()).map(s=>s.hotel.trim());
+  const missing=[...new Set(names)].filter(name=>!trip.summary.includes(name));
+  if(missing.length){ trip.summary=(trip.summary?trip.summary.replace(/\s+$/,'')+'\n\n':'')+missing.map(n=>n+':').join('\n\n'); trip.updated=Date.now(); persist(); }
 }
-function renderSummary(){
-  syncSummaryHotelNames();
-  setBar(`<button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>Summary</h1><button class="icon-btn" data-a="exportsummary" aria-label="Export">${ICON.share}</button>`);
+function renderTrip(){
+  const trip=curTrip(); if(!trip){ view={name:'home'}; return render(); }
+  syncTripHotelNames(trip);
+  const tripSurveys=[...S.surveys.filter(s=>s.tripId===trip.id)].sort((a,b)=>(b.updated||0)-(a.updated||0));
+  setBar(`<button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>${esc(trip.city||'Untitled trip')}</h1><button class="icon-btn" data-a="exportsummary" aria-label="Export">${ICON.share}</button>`);
   $('#app').innerHTML = `
     <section class="panel">
+      <h2>Trip details</h2>
+      <label class="f">City / airport code (shown in the PDF header)<input id="summaryCity" value="${esc(trip.city)}" placeholder="e.g. Riyadh, RUH"></label>
+      <label class="f">Inspector(s) (shown in the PDF header)<input id="summaryInspectors" value="${esc(trip.inspectors)}" placeholder="e.g. Witkamp & Snijders"></label>
+      <label class="f">Flight schedule (outbound &amp; return)<textarea class="inp" id="summaryFlights" rows="4" placeholder="${esc('KL123  06-10-2026  AMS-RUH  10:20-18:05\nKL456  10-10-2026  RUH-AMS  20:10-01:45')}">${esc(trip.flights)}</textarea></label>
+      <label class="f">Reason for survey<textarea class="inp" id="summaryReason" rows="3" placeholder="e.g. Scheduled annual survey / new destination / complaint follow-up">${esc(trip.reason)}</textarea></label>
+    </section>
+    <section class="panel">
+      <h2>Surveys in this trip</h2>
+      ${tripSurveys.length ? tripSurveys.map(s=>{ const v=verdict(s); return `
+        <div class="swipe-row">
+          <button class="swipe-del" data-a="swipedelete" data-id="${s.id}" aria-label="Delete survey">${ICON.trash}<span>Delete</span></button>
+          <button class="survey-row" data-a="open" data-id="${s.id}">
+            <span class="stamp" data-s="${v.k}" aria-label="${v.w}">${v.t}</span>
+            <span class="t"><b>${esc(title(s))}</b>
+              <span>${esc([s.city,dateNL(s.date)].filter(Boolean).join(', '))} · ${v.w}</span>
+              <span class="status ${s.status==='verzonden'?'sent':''}">${s.status==='verzonden'?'Sent':'Draft'}</span></span>
+          </button>
+        </div>`}).join('') : `<p class="hint">No surveys yet in this trip.</p>`}
+      <button class="btn wide" style="margin-top:14px" data-a="newsurvey">+ Add survey</button>
+    </section>
+    <section class="panel">
       <h2>Hotel summary</h2>
-      <p class="hint">Hotel names from your surveys are added automatically. Type or paste your plus and minus points per hotel — works with text copied from Word, Notes, Google Docs, anything. End a hotel name with a colon (:) to start a new hotel — each one gets its own page in the PDF. Lines starting with + or - become bullet points; any other text becomes a paragraph under that hotel.</p>
-      <label class="f">City / airport code (shown in the PDF header)<input id="summaryCity" value="${esc(S.summaryCity)}" placeholder="e.g. Riyadh, RUH"></label>
-      <label class="f">Inspector(s) (shown in the PDF header)<input id="summaryInspectors" value="${esc(S.summaryInspectors)}" placeholder="e.g. Witkamp & Snijders"></label>
-      <label class="f">Flight schedule (outbound &amp; return)<textarea class="inp" id="summaryFlights" rows="4" placeholder="${esc('KL123  06-10-2026  AMS-RUH  10:20-18:05\nKL456  10-10-2026  RUH-AMS  20:10-01:45')}">${esc(S.summaryFlights)}</textarea></label>
-      <label class="f">Reason for survey<textarea class="inp" id="summaryReason" rows="3" placeholder="e.g. Scheduled annual survey / new destination / complaint follow-up">${esc(S.summaryReason)}</textarea></label>
-      <label class="f" style="margin-top:14px">Summary text</label>
-      <textarea class="inp" id="summaryText" rows="18" placeholder="${esc('Hilton Riyadh:\n+ Great location\n+ Friendly staff\n- Noisy AC unit\nA short paragraph with more detail can go here too.\n\nMovenpick Amsterdam:\n+ Spacious rooms\n- Slow check-in')}">${esc(S.summary)}</textarea>
+      <p class="hint">Hotel names from this trip's surveys are added automatically. Type or paste your plus and minus points per hotel — works with text copied from Word, Notes, Google Docs, anything. End a hotel name with a colon (:) to start a new hotel — each one gets its own page in the PDF. Lines starting with + or - become bullet points; any other text becomes a paragraph under that hotel.</p>
+      <textarea class="inp" id="summaryText" rows="18" placeholder="${esc('Hilton Riyadh:\n+ Great location\n+ Friendly staff\n- Noisy AC unit\nA short paragraph with more detail can go here too.\n\nMovenpick Amsterdam:\n+ Spacious rooms\n- Slow check-in')}">${esc(trip.summary)}</textarea>
       <label class="add-photo" style="margin-top:12px">📄 Import text file (.txt)<input type="file" accept=".txt,text/plain" id="summaryImport" style="position:absolute;width:1px;height:1px;opacity:0"></label>
+    </section>
+    <section class="panel">
+      <button type="button" class="btn wide danger" data-a="deletetrip">Delete trip</button>
     </section>`;
   setDock('');
 }
@@ -1352,7 +1385,7 @@ document.addEventListener('click', async e=>{
   else if(a==='logout'){ doLogout(); }
   else if(a==='home'){view={name:'home'};render();}
   else if(a==='settings'){view={name:'settings'};render();}
-  else if(a==='summary'){view={name:'summary'};render();}
+  else if(a==='back-trip'){view={name:'trip',id:s?.tripId};render();}
   else if(a==='exportsummary'){
     showModal(`<h2>Export summary</h2><p>Choose a style and format.</p>
       <div class="actions">
@@ -1370,14 +1403,22 @@ document.addEventListener('click', async e=>{
   else if(a==='exportclassicpdf'){ hideModal(); exportClassicPdf(); }
   else if(a==='exportclassicword'){ hideModal(); exportClassicWord(); }
   else if(a==='new'){
-    const n={id:uid(),hotel:'',address:'',city:'',reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''}};
+    const t={id:uid(),city:'',inspectors:'',flights:'',reason:'',summary:'',updated:Date.now(),deleted:false};
+    S.trips.push(t); persist(); view={name:'trip',id:t.id}; render();
+  }
+  else if(a==='newsurvey'){
+    const trip=curTrip(); if(!trip) return;
+    const n={id:uid(),hotel:'',address:'',city:'',reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''},tripId:trip.id};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
   }
+  else if(a==='opentrip'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'trip',id:b.dataset.id}; render(); }
+  else if(a==='swipedeletetrip'){ const trip=S.trips.find(x=>x.id===b.dataset.id); if(trip && deleteTrip(trip)){ render(); } else closeSwipes(); }
+  else if(a==='deletetrip'){ const trip=curTrip(); if(trip && deleteTrip(trip)){ view={name:'home'}; render(); } }
   else if(a==='open'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'edit',id:b.dataset.id}; render(); }
   else if(a==='swipedelete'){ const sv=S.surveys.find(x=>x.id===b.dataset.id); if(sv && confirm(`Delete survey "${title(sv)}"?`)){ pendingDeletes.surveys.push(sv.id); S.surveys=S.surveys.filter(x=>x.id!==sv.id); persist(); render(); toast('Survey deleted'); } else closeSwipes(); }
   else if(a==='report'){view={name:'report',id:s.id};render();}
   else if(a==='back-edit'){view={name:'edit',id:s.id};render();}
-  else if(a==='delete'){ if(confirm(`Delete survey "${title(s)}"?`)){ pendingDeletes.surveys.push(s.id); S.surveys=S.surveys.filter(x=>x.id!==s.id); persist(); view={name:'home'}; render(); toast('Survey deleted'); } }
+  else if(a==='delete'){ if(confirm(`Delete survey "${title(s)}"?`)){ pendingDeletes.surveys.push(s.id); S.surveys=S.surveys.filter(x=>x.id!==s.id); persist(); view={name:'trip',id:s.tripId}; render(); toast('Survey deleted'); } }
   else if(a==='sharesurvey'){
     showModal(`<h2>Export</h2><p>Back up just this survey, or everything?</p>
       <div class="actions">
@@ -1458,11 +1499,11 @@ document.addEventListener('click', async e=>{
 });
 document.addEventListener('input', e=>{
   const el=e.target, s=cur(), d=el.dataset;
-  if(el.id==='summaryText'){ S.summary=el.value; persist(); return; }
-  if(el.id==='summaryCity'){ S.summaryCity=el.value; persist(); return; }
-  if(el.id==='summaryInspectors'){ S.summaryInspectors=el.value; persist(); return; }
-  if(el.id==='summaryFlights'){ S.summaryFlights=el.value; persist(); return; }
-  if(el.id==='summaryReason'){ S.summaryReason=el.value; persist(); return; }
+  if(el.id==='summaryText'){ const t=curTrip(); if(t){ t.summary=el.value; t.updated=Date.now(); persist(); } return; }
+  if(el.id==='summaryCity'){ const t=curTrip(); if(t){ t.city=el.value; t.updated=Date.now(); persist(); } return; }
+  if(el.id==='summaryInspectors'){ const t=curTrip(); if(t){ t.inspectors=el.value; t.updated=Date.now(); persist(); } return; }
+  if(el.id==='summaryFlights'){ const t=curTrip(); if(t){ t.flights=el.value; t.updated=Date.now(); persist(); } return; }
+  if(el.id==='summaryReason'){ const t=curTrip(); if(t){ t.reason=el.value; t.updated=Date.now(); persist(); } return; }
   if(d.k){ const was=s? doneCount(s):0; if(d.k==='driveTime') s.driveTimeAuto=false; if(d.k==='airQualityIndex') s.airQualityAuto=false; s.f[d.k]=el.value; touch(s);
     const fld=FIELD[d.k]; if(fld?.type==='slider'){ const sv=document.querySelector(`[data-sliderval="${d.k}"]`); if(sv) sv.textContent=sliderText(fld,Number(el.value)); }
     const mm=d.k.match(/^mealHours\.(\d+)\.(\d+)\.(from|to)$/);
@@ -1501,8 +1542,9 @@ document.addEventListener('input', e=>{
 document.addEventListener('change', async e=>{
   const el=e.target; const s=cur();
   if(el.id==='summaryImport' && el.files?.[0]){
-    if(S.summary.trim() && !confirm('Replace the current summary text with this file\'s content?')){ el.value=''; return; }
-    try{ S.summary=await el.files[0].text(); persist(); render(); toast('Imported.'); }
+    const t=curTrip(); if(!t) return;
+    if(t.summary.trim() && !confirm('Replace the current summary text with this file\'s content?')){ el.value=''; return; }
+    try{ t.summary=await el.files[0].text(); t.updated=Date.now(); persist(); render(); toast('Imported.'); }
     catch(err){ toast('Could not read that file.'); }
     el.value=''; return;
   }
@@ -1510,11 +1552,7 @@ document.addEventListener('change', async e=>{
     try{ const d=JSON.parse(await el.files[0].text()); if(!Array.isArray(d.surveys)) throw 0;
       let n=0; d.surveys.forEach(x=>{ if(!x?.id||!x.f) return; const i=S.surveys.findIndex(y=>y.id===x.id); if(i>=0) S.surveys[i]=x; else S.surveys.push(x); n++; });
       (d.groups||[]).forEach(g=>{ if(g?.id && !S.groups.some(y=>y.id===g.id)) S.groups.push(g); });
-      if(typeof d.summary==='string' && d.summary) S.summary=d.summary;
-      if(typeof d.summaryCity==='string' && d.summaryCity) S.summaryCity=d.summaryCity;
-      if(typeof d.summaryInspectors==='string' && d.summaryInspectors) S.summaryInspectors=d.summaryInspectors;
-      if(typeof d.summaryFlights==='string' && d.summaryFlights) S.summaryFlights=d.summaryFlights;
-      if(typeof d.summaryReason==='string' && d.summaryReason) S.summaryReason=d.summaryReason;
+      (d.trips||[]).forEach(t=>{ if(t?.id){ const i=S.trips.findIndex(x=>x.id===t.id); if(i>=0) S.trips[i]=t; else S.trips.push(t); } });
       persist(); toast(`${n} survey${n===1?'':'s'} restored`); render();
     }catch(err){ toast('This file is not a Pillow Report backup.'); }
     el.value=''; return;
@@ -1605,23 +1643,24 @@ function staticMapUrlMulti(hotels,airport){
   params.push(`key=${encodeURIComponent(S.googleMapsKey)}`);
   return `https://maps.googleapis.com/maps/api/staticmap?${params.join('&')}`;
 }
-function matchSummaryBlocksToSurveys(){
+function matchSummaryBlocksToSurveys(trip){
   const norm=t=>(t||'').toLowerCase().replace(/[^a-z0-9\s]/g,' ').replace(/\s+/g,' ').trim();
   const wordSet=t=>new Set(norm(t).split(' ').filter(Boolean));
   const matchScore=(a,b)=>{ const wa=wordSet(a), wb=wordSet(b); if(!wa.size||!wb.size) return 0;
     let common=0; wa.forEach(w=>{ if(wb.has(w)) common++; }); return common/Math.min(wa.size,wb.size); };
-  const blocks=parseSummaryBlocks();
+  const blocks=parseSummaryBlocks(trip);
+  const tripSurveys=S.surveys.filter(s=>s.tripId===trip.id);
   return blocks.filter(b=>b.heading).map(block=>{
     // tolerate a manual number the user prefixed, e.g. "1. Sofitel..." or "1) Sofitel..."
     const cleanHeading=block.heading.replace(/^\s*\d+[.\-):]?\s*/,'').trim();
     let best=null, bestScore=0;
-    S.surveys.forEach(sv=>{ if(!(sv.hotel||'').trim()) return; const sc=matchScore(cleanHeading,sv.hotel); if(sc>bestScore){ bestScore=sc; best=sv; } });
+    tripSurveys.forEach(sv=>{ if(!(sv.hotel||'').trim()) return; const sc=matchScore(cleanHeading,sv.hotel); if(sc>bestScore){ bestScore=sc; best=sv; } });
     return {heading:cleanHeading, block, survey:(bestScore>=0.5?best:null)};
   });
 }
-async function getSummaryMapDataUrl(){
+async function getSummaryMapDataUrl(trip){
   if(!S.googleMapsKey || !navigator.onLine) return null;
-  const matches=matchSummaryBlocksToSurveys();
+  const matches=matchSummaryBlocksToSurveys(trip);
   const ordered=[]; const unmatchedHeadings=[];
   matches.forEach(m=>{ if(m.survey){ if(!ordered.includes(m.survey)) ordered.push(m.survey); } else unmatchedHeadings.push(m.heading); });
   const noCoordHotels=[];
@@ -1727,11 +1766,11 @@ function makePdf(s,mapDataUrl){
 }
 const pdfName = s=>`Pillow Report ${title(s).replace(/[\\/:*?"<>|]/g,'')} ${s.city||''} ${s.date||''}.pdf`.replace(/\s+/g,' ');
 
-function parseSummaryBlocks(){
+function parseSummaryBlocks(trip){
   // One block per hotel. A line ending in ":" (and not a bullet) starts a new hotel;
   // + / - lines are bullets; anything else is paragraph text under the current hotel.
   const blocks=[]; let blk=null;
-  (S.summary||'').split('\n').forEach(raw=>{
+  (trip.summary||'').split('\n').forEach(raw=>{
     const line=raw.trim(); if(!line) return;
     const isPlus=line.startsWith('+'), isMinus=line.startsWith('-');
     const isHeading=!isPlus && !isMinus && line.endsWith(':');
@@ -1742,17 +1781,17 @@ function parseSummaryBlocks(){
   });
   return blocks;
 }
-function makeSummaryPdf(mapDataUrl){
+function makeSummaryPdf(trip,mapDataUrl){
   if(!window.jspdf) throw new Error('nolib');
   const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); const W=210,H=297,M=16,CW=W-2*M; let y=0;
   const setF=(size,style='normal',col=INK)=>{ doc.setFont('helvetica',style); doc.setFontSize(size); doc.setTextColor(...col); };
   const HEAD_SIZE=14, POINT_SIZE=10.5, PARA_SIZE=10, LINE_H=5, PARA_LINE_H=4.6;
-  const blocks=parseSummaryBlocks();
+  const blocks=parseSummaryBlocks(trip);
 
-  const headerSub=[S.summaryCity,dateNL(today()),S.summaryInspectors?'Surveyed by '+S.summaryInspectors:''].filter(Boolean).join('   |   ');
+  const headerSub=[trip.city,dateNL(today()),trip.inspectors?'Surveyed by '+trip.inspectors:''].filter(Boolean).join('   |   ');
   doc.setFillColor(...KLMBLUE); doc.rect(0,0,W,36,'F');
   setF(9,'bold',[170,190,215]); doc.text('PILLOW REPORT',M,12);
-  setF(18,'bold',[255,255,255]); doc.text(S.summaryCity?`Hotel Summary — ${S.summaryCity}`:'Hotel Summary',M,24);
+  setF(18,'bold',[255,255,255]); doc.text(trip.city?`Hotel Summary — ${trip.city}`:'Hotel Summary',M,24);
   setF(9,'normal',[200,212,228]); doc.text(headerSub,M,30);
   y=48;
 
@@ -1805,8 +1844,9 @@ function makeSummaryPdf(mapDataUrl){
   return doc.output('blob');
 }
 async function exportSummaryPdf(){
-  const mapDataUrl=await getSummaryMapDataUrl();
-  let blob; try{ blob=makeSummaryPdf(mapDataUrl); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
+  const trip=curTrip(); if(!trip) return;
+  const mapDataUrl=await getSummaryMapDataUrl(trip);
+  let blob; try{ blob=makeSummaryPdf(trip,mapDataUrl); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
   const name=`Pillow Report Summary ${today()}.pdf`;
   if(downloads){ try{ await downloads.save({filename:name,data:blob}); toast('PDF saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here.'); } return; }
   const file=new File([blob],name,{type:'application/pdf'});
@@ -1856,16 +1896,16 @@ function pdfGridTable(doc,setF,x,y,colWidths,rows,rowH=7){
   });
   return y;
 }
-function makeClassicPdf(mapDataUrl){
+function makeClassicPdf(trip,mapDataUrl){
   if(!window.jspdf) throw new Error('nolib');
   const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}); const W=210,H=297,M=16,CW=W-2*M; let y=0;
   const setF=(size,style='normal',col=INK)=>{ doc.setFont('helvetica',style); doc.setFontSize(size); doc.setTextColor(...col); };
   const ensure=h=>{ if(y+h>H-M-6){ doc.addPage(); y=M; } };
-  const matches=matchSummaryBlocksToSurveys();
+  const matches=matchSummaryBlocksToSurveys(trip);
 
   doc.setFillColor(...KLMBLUE); doc.rect(0,0,W,36,'F');
   setF(9,'bold',[170,190,215]); doc.text('PILLOW REPORT',M,12);
-  setF(18,'bold',[255,255,255]); doc.text(S.summaryCity?`Hotel Survey Report — ${S.summaryCity}`:'Hotel Survey Report',M,24);
+  setF(18,'bold',[255,255,255]); doc.text(trip.city?`Hotel Survey Report — ${trip.city}`:'Hotel Survey Report',M,24);
   setF(9,'normal',[200,212,228]); doc.text(dateNL(today()),M,30);
   y=48;
 
@@ -1874,8 +1914,8 @@ function makeClassicPdf(mapDataUrl){
   setF(10,'normal',MUTED); doc.text('(SPL/NI)',M+50,y); y+=6; doc.text('(HoDaCo)',M+50,y); y+=12;
 
   setF(11,'bold',INK); doc.text('Flight schedule:',M,y); y+=7;
-  if(S.summaryFlights.trim()){
-    const wrapped=doc.splitTextToSize(S.summaryFlights.trim(),CW); ensure(wrapped.length*5+4);
+  if(trip.flights.trim()){
+    const wrapped=doc.splitTextToSize(trip.flights.trim(),CW); ensure(wrapped.length*5+4);
     setF(10,'normal',INK); doc.text(wrapped,M,y); y+=wrapped.length*5+8;
   } else { setF(9,'normal',MUTED); doc.text('-',M,y); y+=14; }
 
@@ -1903,8 +1943,8 @@ function makeClassicPdf(mapDataUrl){
 
   ensure(24);
   setF(14,'bold',INK); doc.text('Reason survey',M,y); y+=10;
-  if(S.summaryReason.trim()){
-    const wrapped=doc.splitTextToSize(S.summaryReason.trim(),CW); ensure(wrapped.length*5+4);
+  if(trip.reason.trim()){
+    const wrapped=doc.splitTextToSize(trip.reason.trim(),CW); ensure(wrapped.length*5+4);
     setF(10,'normal',INK); doc.text(wrapped,M,y); y+=wrapped.length*5+10;
   } else y+=6;
 
@@ -1929,8 +1969,9 @@ function makeClassicPdf(mapDataUrl){
   return doc.output('blob');
 }
 async function exportClassicPdf(){
-  const mapDataUrl=await getSummaryMapDataUrl();
-  let blob; try{ blob=makeClassicPdf(mapDataUrl); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
+  const trip=curTrip(); if(!trip) return;
+  const mapDataUrl=await getSummaryMapDataUrl(trip);
+  let blob; try{ blob=makeClassicPdf(trip,mapDataUrl); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
   const name=`Pillow Report Trip Report ${today()}.pdf`;
   if(downloads){ try{ await downloads.save({filename:name,data:blob}); toast('PDF saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here.'); } return; }
   const file=new File([blob],name,{type:'application/pdf'});
@@ -1952,7 +1993,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.0.0';
+const APP_VERSION='2.1.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2020,11 +2061,11 @@ async function saveWord(s){
   }
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=wordName(s); document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
-function makeSummaryRtf(){
-  const blocks=parseSummaryBlocks();
-  const headerSub=[S.summaryCity,dateNL(today()),S.summaryInspectors?'Surveyed by '+S.summaryInspectors:''].filter(Boolean).join('   |   ');
+function makeSummaryRtf(trip){
+  const blocks=parseSummaryBlocks(trip);
+  const headerSub=[trip.city,dateNL(today()),trip.inspectors?'Surveyed by '+trip.inspectors:''].filter(Boolean).join('   |   ');
   let body='';
-  body+=`{\\pard\\sa80\\fs32\\b\\cf1 Hotel Summary${S.summaryCity?' \\u8212? '+rtfEsc(S.summaryCity):''}\\par}\n`;
+  body+=`{\\pard\\sa80\\fs32\\b\\cf1 Hotel Summary${trip.city?' \\u8212? '+rtfEsc(trip.city):''}\\par}\n`;
   body+=`{\\pard\\sa240\\fs20 ${rtfEsc(headerSub)}\\par}\n`;
   blocks.forEach(block=>{
     if(block.heading) body+=`{\\pard\\sb200\\sa80\\fs24\\b\\cf1 ${rtfEsc(block.heading)}\\par}\n`;
@@ -2039,7 +2080,8 @@ function makeSummaryRtf(){
   return RTF_HEAD+body+'}';
 }
 async function exportSummaryWord(){
-  const blob=new Blob([makeSummaryRtf()],{type:'application/rtf'});
+  const trip=curTrip(); if(!trip) return;
+  const blob=new Blob([makeSummaryRtf(trip)],{type:'application/rtf'});
   const name=`Pillow Report Summary ${today()}.rtf`;
   if(downloads){ try{ await downloads.save({filename:name,data:blob}); toast('Word document saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here.'); } return; }
   const file=new File([blob],name,{type:'application/rtf'});
@@ -2059,17 +2101,17 @@ function rtfTableRow(cells,colWidths){
   });
   return out+'\\row\n';
 }
-function makeClassicRtf(){
-  const matches=matchSummaryBlocksToSurveys();
+function makeClassicRtf(trip){
+  const matches=matchSummaryBlocksToSurveys(trip);
   let body='';
-  body+=`{\\pard\\sa80\\fs32\\b\\cf1 Hotel Survey Report${S.summaryCity?' \\u8212? '+rtfEsc(S.summaryCity):''}\\par}\n`;
+  body+=`{\\pard\\sa80\\fs32\\b\\cf1 Hotel Survey Report${trip.city?' \\u8212? '+rtfEsc(trip.city):''}\\par}\n`;
   body+=`{\\pard\\sa200\\fs20 ${rtfEsc(dateNL(today()))}\\par}\n`;
   body+=`{\\pard\\sa60\\fs20\\b Survey date: -\\par}\n`;
   body+=`{\\pard\\sa20\\fs20\\b Surveying party: -\\b0   (SPL/NI)\\par}\n`;
   body+=`{\\pard\\sa200\\fs20 \\tab (HoDaCo)\\par}\n`;
 
   body+=`{\\pard\\sb100\\sa80\\fs22\\b\\cf1 Flight schedule:\\par}\n`;
-  body+=S.summaryFlights.trim()?`{\\pard\\sa240\\fs20 ${rtfEsc(S.summaryFlights.trim())}\\par}\n`:`{\\pard\\sa240\\fs20\\cf4 -\\par}\n`;
+  body+=trip.flights.trim()?`{\\pard\\sa240\\fs20 ${rtfEsc(trip.flights.trim())}\\par}\n`:`{\\pard\\sa240\\fs20\\cf4 -\\par}\n`;
 
   body+=`{\\pard\\sb100\\sa80\\fs22\\b\\cf1 Overnight stay:\\par}\n`;
   body+=rtfTableRow([{text:'Date',bold:true},{text:'Hotel',bold:true}],[2000,6400]);
@@ -2086,7 +2128,7 @@ function makeClassicRtf(){
   body+=`{\\pard\\sa240\\fs18\\i\\cf4 (Add a screenshot of the destination city map here.)\\par}\n`;
 
   body+=`{\\pard\\sb100\\sa80\\fs24\\b\\cf1 Reason survey\\par}\n`;
-  body+=S.summaryReason.trim()?`{\\pard\\sa240\\fs20 ${rtfEsc(S.summaryReason.trim())}\\par}\n`:`{\\pard\\sa240\\par}\n`;
+  body+=trip.reason.trim()?`{\\pard\\sa240\\fs20 ${rtfEsc(trip.reason.trim())}\\par}\n`:`{\\pard\\sa240\\par}\n`;
 
   matches.forEach(m=>{
     body+=`{\\pard\\sb200\\sa80\\fs24\\b\\cf1 ${rtfEsc(m.heading)}\\par}\n`;
@@ -2101,7 +2143,8 @@ function makeClassicRtf(){
   return RTF_HEAD+body+'}';
 }
 async function exportClassicWord(){
-  const blob=new Blob([makeClassicRtf()],{type:'application/rtf'});
+  const trip=curTrip(); if(!trip) return;
+  const blob=new Blob([makeClassicRtf(trip)],{type:'application/rtf'});
   const name=`Pillow Report Trip Report ${today()}.rtf`;
   if(downloads){ try{ await downloads.save({filename:name,data:blob}); toast('Word document saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here.'); } return; }
   const file=new File([blob],name,{type:'application/rtf'});
@@ -2119,7 +2162,7 @@ async function exportSurvey(s){
   const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=file.name; document.body.appendChild(a); a.click(); a.remove();
 }
 async function exportAll(){
-  const data=JSON.stringify({surveys:S.surveys,groups:S.groups,defaultRep:S.defaultRep,summary:S.summary,summaryCity:S.summaryCity,summaryInspectors:S.summaryInspectors,summaryFlights:S.summaryFlights,summaryReason:S.summaryReason},null,1);
+  const data=JSON.stringify({surveys:S.surveys,groups:S.groups,trips:S.trips,defaultRep:S.defaultRep},null,1);
   if(downloads){ try{ await downloads.save({filename:`hotel-surveys-${today()}.json`,data}); toast('Export saved'); }catch(e){ if(e?.code!=='declined') toast('Exporting does not work here.'); } return; }
   const file=new File([data],`hotel-surveys-${today()}.json`,{type:'application/json'});
   if(navigator.canShare?.({files:[file]})){ try{ await shareGuard({files:[file]}); return; }catch(e){ if(e.name==='AbortError') return; } }
@@ -2198,6 +2241,19 @@ async function pushDirty(){
       if(!error) pendingDeletes.groups=pendingDeletes.groups.filter(x=>x!==id);
     }catch(e){}
   }
+  for(const t of S.trips){
+    if(lastPushed.trips[t.id]===t.updated) continue;
+    try{
+      const {error}=await sb.from('trips').upsert({id:t.id, owner_id:sbUser.id, data:t, updated_at:new Date(t.updated||Date.now()).toISOString(), deleted:false});
+      if(!error) lastPushed.trips[t.id]=t.updated;
+    }catch(e){}
+  }
+  for(const id of [...pendingDeletes.trips]){
+    try{
+      const {error}=await sb.from('trips').update({deleted:true}).eq('id',id).eq('owner_id',sbUser.id);
+      if(!error) pendingDeletes.trips=pendingDeletes.trips.filter(x=>x!==id);
+    }catch(e){}
+  }
   store.set('syncPushed', lastPushed); store.set('syncDeletes', pendingDeletes);
 }
 async function pullRemote(){
@@ -2223,8 +2279,18 @@ async function pullRemote(){
       lastPushed.groups[row.id]=true;
     });
   }catch(e){}
+  try{
+    const {data:rows,error}=await sb.from('trips').select('*').eq('deleted',false);
+    if(!error && rows) rows.forEach(row=>{
+      if(pendingDeletes.trips.includes(row.id)) return;
+      const local=S.trips.find(x=>x.id===row.id);
+      const remoteUpdated=row.data?.updated||0;
+      if(!local){ S.trips.push(row.data); lastPushed.trips[row.id]=row.data.updated; changed=true; }
+      else if(remoteUpdated>(local.updated||0)){ Object.assign(local,row.data); lastPushed.trips[row.id]=row.data.updated; changed=true; }
+    });
+  }catch(e){}
   if(changed){
-    store.set('surveys-v2',S.surveys); store.set('groups',S.groups);
+    store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('trips',S.trips);
     if(view.name!=='login') render();
   }
 }
@@ -2243,13 +2309,38 @@ async function bootUser(){
   const savedAutoAQ=await store.get('autoAirQuality'); S.autoAirQuality = savedAutoAQ===undefined ? true : savedAutoAQ;
   const savedWaqi=await store.get('waqiToken'); S.waqiToken = savedWaqi===undefined ? DEFAULT_WAQI_TOKEN : savedWaqi;
   const savedAutoSavePhotos=await store.get('autoSavePhotos'); S.autoSavePhotos = savedAutoSavePhotos===undefined ? true : savedAutoSavePhotos;
-  S.summary=(await store.get('summary'))||'';
-  S.summaryCity=(await store.get('summaryCity'))||'';
-  S.summaryInspectors=(await store.get('summaryInspectors'))||'';
-  S.summaryFlights=(await store.get('summaryFlights'))||'';
-  S.summaryReason=(await store.get('summaryReason'))||'';
-  lastPushed=(await store.get('syncPushed'))||{surveys:{},groups:{}};
-  pendingDeletes=(await store.get('syncDeletes'))||{surveys:[],groups:[]};
+  S.trips=(await store.get('trips'))||[];
+  if(!(await store.get('tripsMigrated'))){
+    // One-time migration: group any pre-Trips surveys by city into an auto-created trip each,
+    // and fold the old singleton Summary fields into the best-matching (or first) migrated trip.
+    const legacySummary=(await store.get('summary'))||'';
+    const legacySummaryCity=(await store.get('summaryCity'))||'';
+    const legacySummaryInspectors=(await store.get('summaryInspectors'))||'';
+    const legacySummaryFlights=(await store.get('summaryFlights'))||'';
+    const legacySummaryReason=(await store.get('summaryReason'))||'';
+    const byCity={};
+    S.surveys.filter(x=>!x.tripId).forEach(sv=>{ const key=(sv.city||'').trim(); (byCity[key]=byCity[key]||[]).push(sv); });
+    const migratedTrips=[];
+    Object.keys(byCity).forEach(city=>{
+      const t={id:uid(),city,inspectors:'',flights:'',reason:'',summary:'',updated:Date.now(),deleted:false};
+      byCity[city].forEach(sv=>sv.tripId=t.id);
+      S.trips.push(t); migratedTrips.push(t);
+    });
+    if(legacySummary||legacySummaryCity||legacySummaryInspectors||legacySummaryFlights||legacySummaryReason){
+      let target=migratedTrips.find(t=>t.city && legacySummaryCity && t.city.toLowerCase()===legacySummaryCity.trim().toLowerCase())||migratedTrips[0];
+      if(!target){ target={id:uid(),city:legacySummaryCity,inspectors:'',flights:'',reason:'',summary:'',updated:Date.now(),deleted:false}; S.trips.push(target); }
+      target.summary=legacySummary||target.summary;
+      if(!target.city) target.city=legacySummaryCity;
+      target.inspectors=legacySummaryInspectors||target.inspectors;
+      target.flights=legacySummaryFlights||target.flights;
+      target.reason=legacySummaryReason||target.reason;
+      target.updated=Date.now();
+    }
+    await store.set('tripsMigrated', true);
+    if(S.trips.length) persist();
+  }
+  lastPushed=(await store.get('syncPushed'))||{surveys:{},groups:{},trips:{}};
+  pendingDeletes=(await store.get('syncDeletes'))||{surveys:[],groups:[],trips:[]};
   if(sb){
     try{
       const {data:{session}}=await sb.auth.getSession();
