@@ -2123,7 +2123,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.3.1';
+const APP_VERSION='2.3.2';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2424,25 +2424,7 @@ async function pullRemote(){
     if(view.name!=='login') render();
   }
 }
-async function bootUser(){
-  sbIsAdmin=false;
-  if(sb && sbUser && navigator.onLine){
-    try{
-      const {data:profile}=await sb.from('profiles').select('approved,rejected,is_admin').eq('id',sbUser.id).single();
-      if(profile){
-        sbIsAdmin=!!profile.is_admin;
-        if(profile.rejected){ pendingStatus='rejected'; view={name:'pending'}; render(); return; }
-        if(!profile.approved){ pendingStatus='waiting'; view={name:'pending'}; render(); return; }
-      }
-    }catch(e){}
-  }
-  if(sbIsAdmin) refreshPendingCount();
-  view={name:'home'}; render();
-  await syncNow();
-}
-
-/* ---------- Boot ---------- */
-(async()=>{
+async function loadLocalData(){
   await store.open();
   S.surveys=(await store.get('surveys-v2'))||[]; S.groups=(await store.get('groups'))||[]; S.defaultRep=(await store.get('defaultRep'))||'';
   const savedAutoDrive=await store.get('autoDriveTime'); S.autoDriveTime = savedAutoDrive===undefined ? true : savedAutoDrive;
@@ -2485,6 +2467,31 @@ async function bootUser(){
   lastPushed.surveys=lastPushed.surveys||{}; lastPushed.groups=lastPushed.groups||{}; lastPushed.trips=lastPushed.trips||{};
   pendingDeletes=(await store.get('syncDeletes'))||{};
   pendingDeletes.surveys=pendingDeletes.surveys||[]; pendingDeletes.groups=pendingDeletes.groups||[]; pendingDeletes.trips=pendingDeletes.trips||[];
+}
+async function bootUser(){
+  sbIsAdmin=false;
+  // Re-hydrate from this device's local storage every time, not just on a cold app launch —
+  // otherwise logging out and back in within the same running session would wipe the in-memory
+  // state and never bring back anything that was only saved locally and never synced to Supabase.
+  await loadLocalData();
+  if(sb && sbUser && navigator.onLine){
+    try{
+      const {data:profile}=await sb.from('profiles').select('approved,rejected,is_admin').eq('id',sbUser.id).single();
+      if(profile){
+        sbIsAdmin=!!profile.is_admin;
+        if(profile.rejected){ pendingStatus='rejected'; view={name:'pending'}; render(); return; }
+        if(!profile.approved){ pendingStatus='waiting'; view={name:'pending'}; render(); return; }
+      }
+    }catch(e){}
+  }
+  if(sbIsAdmin) refreshPendingCount();
+  view={name:'home'}; render();
+  await syncNow();
+}
+
+/* ---------- Boot ---------- */
+(async()=>{
+  await loadLocalData();
   if(sb){
     try{
       const {data:{session}}=await sb.auth.getSession();
