@@ -13,6 +13,7 @@
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <script src="jspdf.umd.min.js"></script>
+<script src="supabase.min.js"></script>
 <style>
 @font-face{font-family:"Atkinson Hyperlegible";font-weight:400;font-style:normal;font-display:swap;src:url(fonts/atkinson-hyperlegible-latin-400-normal.woff2) format("woff2")}
 @font-face{font-family:"Atkinson Hyperlegible";font-weight:700;font-style:normal;font-display:swap;src:url(fonts/atkinson-hyperlegible-latin-700-normal.woff2) format("woff2")}
@@ -371,14 +372,18 @@ const store = {
 const DEFAULT_GOOGLE_MAPS_KEY = 'AIzaSyD_Jcqk1ucjFox-22y_4l1v7AOCE9olJFQ';
 const DEFAULT_WAQI_TOKEN = '450eb63d4c903214e7f4c1a644315150a7ff2b25';
 /* SHA-256 hash of the shared lock-screen password, not the password itself. A device can clear/override this via the hidden Settings lock-screen section. */
-const DEFAULT_APP_PASSWORD_HASH = '6f5bbb9cdb88b00a1f67d4fc866eeb90d043e4df836e252796c3a78eb812a309';
-let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true, appPasswordHash:'', summary:'', summaryCity:'', summaryInspectors:'', summaryFlights:'', summaryReason:'' };
+const DEFAULT_SUPABASE_URL = 'https://kahmxgxbixryukjoirod.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_qYb6uO8K0HFi-Gfdirx8AA_0jX3duoo';
+const sb = window.supabase ? window.supabase.createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY) : null;
+let sbUser = null;
+let lastPushed = {surveys:{}, groups:{}};
+let pendingDeletes = {surveys:[], groups:[]};
+let S = { surveys:[], groups:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true, summary:'', summaryCity:'', summaryInspectors:'', summaryFlights:'', summaryReason:'' };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
 let advancedUnlocked = false, versionTaps = 0, versionTapTimer = null;
-let appUnlocked = false;
 let saveTimer=null;
-function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); store.set('appPasswordHash',S.appPasswordHash); store.set('summary',S.summary); store.set('summaryCity',S.summaryCity); store.set('summaryInspectors',S.summaryInspectors); store.set('summaryFlights',S.summaryFlights); store.set('summaryReason',S.summaryReason); }
+function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); store.set('summary',S.summary); store.set('summaryCity',S.summaryCity); store.set('summaryInspectors',S.summaryInspectors); store.set('summaryFlights',S.summaryFlights); store.set('summaryReason',S.summaryReason); syncNow(); }
 function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(flushPersist,300); }
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='hidden'){
@@ -406,12 +411,6 @@ function dateSelectHTML(s){
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),3800); }
 function showModal(html){ $('#modalPanel').innerHTML=html; $('#modalBackdrop').hidden=false; }
 function hideModal(){ $('#modalBackdrop').hidden=true; $('#modalPanel').innerHTML=''; }
-async function hashText(t){
-  try{
-    const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
-    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-  }catch(e){ return null; }
-}
 const cur = ()=>{ const s=S.surveys.find(x=>x.id===view.id); if(s){ s.scores=s.scores||{}; s.compliance=s.compliance||{}; if(s.caoAuto===undefined) s.caoAuto=true; if(s.driveTimeAuto===undefined) s.driveTimeAuto=true; if(s.airQualityAuto===undefined) s.airQualityAuto=true; if(s.address===undefined) s.address=''; } return s; };
 const title = s=>s.hotel||'Unnamed hotel';
 const surveyedBy = s=>[s.reps,s.inspector].filter(Boolean).join(' & ');
@@ -487,28 +486,37 @@ function editDockHTML(s){
     <label class="btn dock-photo-btn" aria-label="Add photo">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
 }
 function render(){ window.scrollTo(0,0);
-  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,summary:renderSummary})[view.name](); }
+  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,summary:renderSummary,login:renderLogin})[view.name](); }
 
-function renderLock(msg){
+function renderLogin(msg){
   $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
   setDock('');
   $('#app').innerHTML = `
     <section class="panel" style="margin-top:40px">
-      <h2>Locked</h2>
-      <p class="hint">Enter the shared password to open Pillow Report.</p>
-      <label class="f">Password<input type="password" id="lockInput" autocomplete="off" autocapitalize="off"></label>
+      <h2>Log in</h2>
+      <p class="hint">${sb?'Log in with your Pillow Report account.':'Login is unavailable: the Supabase library did not load. Check your connection and reopen the app.'}</p>
+      <label class="f">E-mail<input type="email" id="loginEmail" autocomplete="username" autocapitalize="off"></label>
+      <label class="f">Password<input type="password" id="loginPassword" autocomplete="current-password"></label>
       ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
-      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="unlock">Unlock</button>
+      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="login" ${sb?'':'disabled'}>Log in</button>
     </section>`;
-  const inp=$('#lockInput');
-  inp?.addEventListener('keydown', e=>{ if(e.key==='Enter') tryUnlock(); });
-  inp?.focus();
+  const pw=$('#loginPassword');
+  pw?.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+  $('#loginEmail')?.focus();
 }
-async function tryUnlock(){
-  const inp=$('#lockInput'); const val=inp?.value||'';
-  const hash=await hashText(val);
-  if(hash && hash===S.appPasswordHash){ appUnlocked=true; render(); }
-  else renderLock('Incorrect password, try again.');
+async function doLogin(){
+  const email=$('#loginEmail')?.value.trim()||'', password=$('#loginPassword')?.value||'';
+  if(!email || !password){ renderLogin('Enter your e-mail and password.'); return; }
+  try{
+    const {data,error}=await sb.auth.signInWithPassword({email,password});
+    if(error || !data?.user){ renderLogin('Incorrect e-mail or password.'); return; }
+    sbUser=data.user; await bootUser();
+  }catch(e){ renderLogin('Could not log in. Check your connection and try again.'); }
+}
+async function doLogout(){
+  if(!confirm('Log out? Surveys already synced stay on the server; anything not yet synced on this device could be lost.')) return;
+  try{ await sb.auth.signOut(); }catch(e){}
+  sbUser=null; S.surveys=[]; S.groups=[]; view={name:'login'}; render();
 }
 
 function renderHome(){
@@ -1118,13 +1126,10 @@ function renderSettings(){
       <label class="f">WAQI token (free)<input type="password" data-set="waqiToken" value="${esc(S.waqiToken)}" autocomplete="off" placeholder="Paste your token here"></label>
       <p class="hint" style="margin-top:8px">Request a free token: go to <b>aqicn.org/data-platform/token/</b>, enter your email address, and you'll receive a token by email right away. No credit card or billing needed. Paste the token above.</p>`:''}
     </section>
-    ${advancedUnlocked?`
-    <section class="panel"><h2>Lock screen</h2>
-      <p class="hint">Sets one shared password everyone uses to open the app. This is a light deterrent, not real encryption — treat it like a screen lock, not a safe.</p>
-      <label class="f">${S.appPasswordHash?'New password (leave empty to keep current)':'Set password'}<input type="password" id="newAppPassword" autocomplete="off" placeholder="${S.appPasswordHash?'Leave empty to keep current':'Choose a shared password'}"></label>
-      <button type="button" class="btn wide" style="margin-top:10px" data-a="setpassword">Save password</button>
-      ${S.appPasswordHash?'<button type="button" class="btn wide danger" style="margin-top:10px" data-a="removepassword">Remove lock screen</button>':''}
-    </section>`:''}
+    <section class="panel"><h2>Account</h2>
+      <p class="hint">Logged in as <b>${esc(sbUser?.email||'')}</b>. Your surveys sync to the server automatically and stay private to your account.</p>
+      <button type="button" class="btn wide danger" style="margin-top:10px" data-a="logout">Log out</button>
+    </section>
     <section class="panel"><h2>Saved recipients</h2>
       <p class="hint">Create groups, e.g. per station or department. Separate multiple addresses with a comma.</p>
       ${S.groups.map(g=>`<div style="border-top:1px solid var(--line);margin-top:14px;padding-top:4px">
@@ -1133,7 +1138,7 @@ function renderSettings(){
         <label class="f">Cc<input data-set="gcc" data-gid="${g.id}" value="${esc(g.cc)}" type="email" multiple></label>
         <button class="link" style="color:var(--s1);margin-top:8px" data-a="delgroup" data-gid="${g.id}">Delete group</button></div>`).join('')}
       <button class="btn wide" style="margin-top:16px" data-a="addgroup">Add group</button></section>
-    <section class="panel"><h2>Backup</h2><p class="hint">Surveys are only stored on this device. Export them from time to time. Tip: tap AirDrop when exporting to quickly transfer to your other iPhone or iPad.</p>
+    <section class="panel"><h2>Backup</h2><p class="hint">Surveys sync to the server automatically, but a local export is still handy for a one-off transfer. Tip: tap AirDrop when exporting to quickly send it to another device.</p>
       <button class="btn wide" style="margin-top:12px" data-a="export">Export all (JSON)</button>
       <label class="btn wide" style="margin-top:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative">Restore backup<input type="file" accept="application/json,.json" data-import style="position:absolute;width:1px;height:1px;opacity:0"></label>
       <p class="hint" style="margin-top:10px">Restoring adds surveys and overwrites surveys with the same ID. This also lets you load surveys from a colleague.</p></section>
@@ -1343,13 +1348,8 @@ document.addEventListener('click', async e=>{
   if(suppressClick) return;
   const b=e.target.closest('[data-a]'); if(!b) return;
   const a=b.dataset.a, s=cur();
-  if(a==='unlock'){ tryUnlock(); }
-  else if(a==='setpassword'){
-    const inp=$('#newAppPassword'); const val=inp?.value||'';
-    if(!val){ if(S.appPasswordHash){ toast('No change made.'); } else toast('Enter a password first.'); return; }
-    S.appPasswordHash=await hashText(val); persist(); render(); toast('Password saved.');
-  }
-  else if(a==='removepassword'){ if(confirm('Remove the shared password? Anyone can then open the app without one.')){ S.appPasswordHash=''; persist(); render(); toast('Lock screen removed.'); } }
+  if(a==='login'){ doLogin(); }
+  else if(a==='logout'){ doLogout(); }
   else if(a==='home'){view={name:'home'};render();}
   else if(a==='settings'){view={name:'settings'};render();}
   else if(a==='summary'){view={name:'summary'};render();}
@@ -1374,10 +1374,10 @@ document.addEventListener('click', async e=>{
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
   }
   else if(a==='open'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'edit',id:b.dataset.id}; render(); }
-  else if(a==='swipedelete'){ const sv=S.surveys.find(x=>x.id===b.dataset.id); if(sv && confirm(`Delete survey "${title(sv)}"?`)){ S.surveys=S.surveys.filter(x=>x.id!==sv.id); persist(); render(); toast('Survey deleted'); } else closeSwipes(); }
+  else if(a==='swipedelete'){ const sv=S.surveys.find(x=>x.id===b.dataset.id); if(sv && confirm(`Delete survey "${title(sv)}"?`)){ pendingDeletes.surveys.push(sv.id); S.surveys=S.surveys.filter(x=>x.id!==sv.id); persist(); render(); toast('Survey deleted'); } else closeSwipes(); }
   else if(a==='report'){view={name:'report',id:s.id};render();}
   else if(a==='back-edit'){view={name:'edit',id:s.id};render();}
-  else if(a==='delete'){ if(confirm(`Delete survey "${title(s)}"?`)){ S.surveys=S.surveys.filter(x=>x.id!==s.id); persist(); view={name:'home'}; render(); toast('Survey deleted'); } }
+  else if(a==='delete'){ if(confirm(`Delete survey "${title(s)}"?`)){ pendingDeletes.surveys.push(s.id); S.surveys=S.surveys.filter(x=>x.id!==s.id); persist(); view={name:'home'}; render(); toast('Survey deleted'); } }
   else if(a==='sharesurvey'){
     showModal(`<h2>Export</h2><p>Back up just this survey, or everything?</p>
       <div class="actions">
@@ -1439,7 +1439,7 @@ document.addEventListener('click', async e=>{
   else if(a==='delphoto'){ s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); refreshPhotosUI(s); }
   else if(a==='savephotos'){ savePhotosToLibrary(s); }
   else if(a==='addgroup'){ S.groups.push({id:uid(),name:'',to:'',cc:''}); persist(); render(); }
-  else if(a==='delgroup'){ S.groups=S.groups.filter(g=>g.id!==b.dataset.gid); persist(); render(); }
+  else if(a==='delgroup'){ pendingDeletes.groups.push(b.dataset.gid); S.groups=S.groups.filter(g=>g.id!==b.dataset.gid); persist(); render(); }
   else if(a==='marksent'){ s.status = s.status==='verzonden'?'concept':'verzonden'; touch(s); render(); toast(s.status==='verzonden'?'Marked as sent':'Reverted to draft'); }
   else if(a==='mail') openMail(s);
   else if(a==='share') sharePdf(s);
@@ -1952,7 +1952,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='1.52.0';
+const APP_VERSION='2.0.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2162,6 +2162,77 @@ async function exportAllWord(){
   toast(`${files.length} Word document${files.length===1?'':'s'} downloaded`);
 }
 
+/* ---------- Sync with Supabase (private per-user; offline-first: IndexedDB is always written
+   first, this is a best-effort background push/pull that silently no-ops when offline) ---------- */
+let syncing=false;
+async function syncNow(){
+  if(syncing || !sb || !sbUser || !navigator.onLine) return;
+  syncing=true;
+  try{ await pushDirty(); await pullRemote(); }catch(e){}
+  syncing=false;
+}
+async function pushDirty(){
+  if(!sb || !sbUser || !navigator.onLine) return;
+  for(const s of S.surveys){
+    if(lastPushed.surveys[s.id]===s.updated) continue;
+    try{
+      const {error}=await sb.from('surveys').upsert({id:s.id, owner_id:sbUser.id, data:s, updated_at:new Date(s.updated||Date.now()).toISOString(), deleted:false});
+      if(!error) lastPushed.surveys[s.id]=s.updated;
+    }catch(e){}
+  }
+  for(const g of S.groups){
+    try{
+      const {error}=await sb.from('groups').upsert({id:g.id, owner_id:sbUser.id, data:g, updated_at:new Date().toISOString(), deleted:false});
+      if(!error) lastPushed.groups[g.id]=true;
+    }catch(e){}
+  }
+  for(const id of [...pendingDeletes.surveys]){
+    try{
+      const {error}=await sb.from('surveys').update({deleted:true}).eq('id',id).eq('owner_id',sbUser.id);
+      if(!error) pendingDeletes.surveys=pendingDeletes.surveys.filter(x=>x!==id);
+    }catch(e){}
+  }
+  for(const id of [...pendingDeletes.groups]){
+    try{
+      const {error}=await sb.from('groups').update({deleted:true}).eq('id',id).eq('owner_id',sbUser.id);
+      if(!error) pendingDeletes.groups=pendingDeletes.groups.filter(x=>x!==id);
+    }catch(e){}
+  }
+  store.set('syncPushed', lastPushed); store.set('syncDeletes', pendingDeletes);
+}
+async function pullRemote(){
+  if(!sb || !sbUser || !navigator.onLine) return;
+  let changed=false;
+  try{
+    const {data:rows,error}=await sb.from('surveys').select('*').eq('deleted',false);
+    if(!error && rows) rows.forEach(row=>{
+      if(pendingDeletes.surveys.includes(row.id)) return;
+      const local=S.surveys.find(x=>x.id===row.id);
+      const remoteUpdated=row.data?.updated||0;
+      if(!local){ S.surveys.push(row.data); lastPushed.surveys[row.id]=row.data.updated; changed=true; }
+      else if(remoteUpdated>(local.updated||0)){ Object.assign(local,row.data); lastPushed.surveys[row.id]=row.data.updated; changed=true; }
+    });
+  }catch(e){}
+  try{
+    const {data:rows,error}=await sb.from('groups').select('*').eq('deleted',false);
+    if(!error && rows) rows.forEach(row=>{
+      if(pendingDeletes.groups.includes(row.id)) return;
+      const i=S.groups.findIndex(x=>x.id===row.id);
+      if(i<0){ S.groups.push(row.data); changed=true; }
+      else if(JSON.stringify(S.groups[i])!==JSON.stringify(row.data)){ S.groups[i]=row.data; changed=true; }
+      lastPushed.groups[row.id]=true;
+    });
+  }catch(e){}
+  if(changed){
+    store.set('surveys-v2',S.surveys); store.set('groups',S.groups);
+    if(view.name!=='login') render();
+  }
+}
+async function bootUser(){
+  view={name:'home'}; render();
+  await syncNow();
+}
+
 /* ---------- Boot ---------- */
 (async()=>{
   await store.open();
@@ -2172,20 +2243,31 @@ async function exportAllWord(){
   const savedAutoAQ=await store.get('autoAirQuality'); S.autoAirQuality = savedAutoAQ===undefined ? true : savedAutoAQ;
   const savedWaqi=await store.get('waqiToken'); S.waqiToken = savedWaqi===undefined ? DEFAULT_WAQI_TOKEN : savedWaqi;
   const savedAutoSavePhotos=await store.get('autoSavePhotos'); S.autoSavePhotos = savedAutoSavePhotos===undefined ? true : savedAutoSavePhotos;
-  const savedAppPwHash=await store.get('appPasswordHash'); S.appPasswordHash = savedAppPwHash===undefined ? DEFAULT_APP_PASSWORD_HASH : savedAppPwHash;
   S.summary=(await store.get('summary'))||'';
   S.summaryCity=(await store.get('summaryCity'))||'';
   S.summaryInspectors=(await store.get('summaryInspectors'))||'';
   S.summaryFlights=(await store.get('summaryFlights'))||'';
   S.summaryReason=(await store.get('summaryReason'))||'';
-  if(S.appPasswordHash && !appUnlocked) renderLock(); else render();
+  lastPushed=(await store.get('syncPushed'))||{surveys:{},groups:{}};
+  pendingDeletes=(await store.get('syncDeletes'))||{surveys:[],groups:[]};
+  if(sb){
+    try{
+      const {data:{session}}=await sb.auth.getSession();
+      sbUser=session?.user||null;
+      sb.auth.onAuthStateChange((event,session)=>{
+        sbUser=session?.user||null;
+        if(!sbUser && view.name!=='login'){ view={name:'login'}; render(); }
+      });
+    }catch(e){ sbUser=null; }
+  }
+  if(sbUser) await bootUser(); else renderLogin();
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){
     const hadController=!!navigator.serviceWorker.controller;
     navigator.serviceWorker.register(`sw.js?v=${APP_VERSION}`).then(reg=>{ reg.update().catch(()=>{}); }).catch(()=>{});
     navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(hadController) toast('New version installed. Close the app and reopen it.'); });
   }
-  addEventListener('online',()=>toast('Back online'));
+  addEventListener('online',()=>{ toast('Back online'); syncNow(); });
   addEventListener('offline',()=>toast('Offline. You can keep working as normal.'));
 })();
 </script>
