@@ -374,6 +374,9 @@ const DEFAULT_WAQI_TOKEN = '450eb63d4c903214e7f4c1a644315150a7ff2b25';
 /* SHA-256 hash of the shared lock-screen password, not the password itself. A device can clear/override this via the hidden Settings lock-screen section. */
 const DEFAULT_SUPABASE_URL = 'https://kahmxgxbixryukjoirod.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_qYb6uO8K0HFi-Gfdirx8AA_0jX3duoo';
+// Captured before Supabase's client has a chance to process/clear the URL, so an invite or
+// password-reset link's flow type survives even though both just land the user in a session.
+const AUTH_HASH_TYPE = (()=>{ const m=location.hash.match(/type=([^&]+)/); return m?m[1]:null; })();
 const sb = window.supabase ? window.supabase.createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY) : null;
 let sbUser = null;
 let lastPushed = {surveys:{}, groups:{}, trips:{}};
@@ -497,7 +500,7 @@ function editDockHTML(s){
     <label class="btn dock-photo-btn" aria-label="Add photo">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
 }
 function render(){ window.scrollTo(0,0);
-  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin})[view.name](); }
+  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin,setpassword:renderSetPassword})[view.name](); }
 
 function renderLogin(msg){
   $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
@@ -510,6 +513,7 @@ function renderLogin(msg){
       <label class="f">Password<input type="password" id="loginPassword" autocomplete="current-password"></label>
       ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
       <button type="button" class="btn primary wide" style="margin-top:14px" data-a="login" ${sb?'':'disabled'}>Log in</button>
+      <button type="button" class="link" style="margin-top:12px;display:block;text-align:center;width:100%" data-a="forgotpassword" ${sb?'':'disabled'}>Forgot password?</button>
     </section>`;
   const pw=$('#loginPassword');
   pw?.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
@@ -524,10 +528,44 @@ async function doLogin(){
     sbUser=data.user; await bootUser();
   }catch(e){ renderLogin('Could not log in. Check your connection and try again.'); }
 }
+async function doForgotPassword(){
+  const email=$('#loginEmail')?.value.trim()||'';
+  if(!email){ renderLogin('Enter your e-mail above first, then tap "Forgot password?" again.'); return; }
+  try{
+    const {error}=await sb.auth.resetPasswordForEmail(email, {redirectTo: location.origin+location.pathname});
+    renderLogin(error ? 'Could not send a reset e-mail. Check your connection and try again.' : 'Reset link sent — check your e-mail.');
+  }catch(e){ renderLogin('Could not send a reset e-mail. Check your connection and try again.'); }
+}
+function renderSetPassword(msg){
+  $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
+  setDock('');
+  $('#app').innerHTML = `
+    <section class="panel" style="margin-top:40px">
+      <h2>${AUTH_HASH_TYPE==='invite'?'Welcome — set your password':'Set a new password'}</h2>
+      <p class="hint">Choose a password for your Pillow Report account${sbUser?.email?' ('+esc(sbUser.email)+')':''}.</p>
+      <label class="f">New password (at least 8 characters)<input type="password" id="newPw" autocomplete="new-password"></label>
+      <label class="f">Confirm password<input type="password" id="newPw2" autocomplete="new-password"></label>
+      ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
+      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="setnewpassword">Save password</button>
+    </section>`;
+  $('#newPw')?.focus();
+}
+async function doSetNewPassword(){
+  const p1=$('#newPw')?.value||'', p2=$('#newPw2')?.value||'';
+  if(p1.length<8){ renderSetPassword('Password must be at least 8 characters.'); return; }
+  if(p1!==p2){ renderSetPassword('Passwords do not match.'); return; }
+  try{
+    const {error}=await sb.auth.updateUser({password:p1});
+    if(error){ renderSetPassword('Could not save password. Try again.'); return; }
+  }catch(e){ renderSetPassword('Could not save password. Check your connection and try again.'); return; }
+  try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
+  toast('Password saved.');
+  await bootUser();
+}
 async function doLogout(){
   if(!confirm('Log out? Surveys already synced stay on the server; anything not yet synced on this device could be lost.')) return;
   try{ await sb.auth.signOut(); }catch(e){}
-  sbUser=null; S.surveys=[]; S.groups=[]; view={name:'login'}; render();
+  sbUser=null; S.surveys=[]; S.groups=[]; S.trips=[]; view={name:'login'}; render();
 }
 
 function renderHome(){
@@ -1383,6 +1421,8 @@ document.addEventListener('click', async e=>{
   const a=b.dataset.a, s=cur();
   if(a==='login'){ doLogin(); }
   else if(a==='logout'){ doLogout(); }
+  else if(a==='forgotpassword'){ doForgotPassword(); }
+  else if(a==='setnewpassword'){ doSetNewPassword(); }
   else if(a==='home'){view={name:'home'};render();}
   else if(a==='settings'){view={name:'settings'};render();}
   else if(a==='back-trip'){view={name:'trip',id:s?.tripId};render();}
@@ -1993,7 +2033,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.1.1';
+const APP_VERSION='2.2.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2349,11 +2389,13 @@ async function bootUser(){
       sbUser=session?.user||null;
       sb.auth.onAuthStateChange((event,session)=>{
         sbUser=session?.user||null;
-        if(!sbUser && view.name!=='login'){ view={name:'login'}; render(); }
+        if(!sbUser && view.name!=='login' && view.name!=='setpassword'){ view={name:'login'}; render(); }
       });
     }catch(e){ sbUser=null; }
   }
-  if(sbUser) await bootUser(); else renderLogin();
+  if(sbUser && (AUTH_HASH_TYPE==='invite' || AUTH_HASH_TYPE==='recovery')){ view={name:'setpassword'}; render(); }
+  else if(sbUser) await bootUser();
+  else { view={name:'login'}; render(); }
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){
     const hadController=!!navigator.serviceWorker.controller;
