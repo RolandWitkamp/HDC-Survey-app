@@ -1993,7 +1993,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.1.0';
+const APP_VERSION='2.1.1';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2339,8 +2339,10 @@ async function bootUser(){
     await store.set('tripsMigrated', true);
     if(S.trips.length) persist();
   }
-  lastPushed=(await store.get('syncPushed'))||{surveys:{},groups:{},trips:{}};
-  pendingDeletes=(await store.get('syncDeletes'))||{surveys:[],groups:[],trips:[]};
+  lastPushed=(await store.get('syncPushed'))||{};
+  lastPushed.surveys=lastPushed.surveys||{}; lastPushed.groups=lastPushed.groups||{}; lastPushed.trips=lastPushed.trips||{};
+  pendingDeletes=(await store.get('syncDeletes'))||{};
+  pendingDeletes.surveys=pendingDeletes.surveys||[]; pendingDeletes.groups=pendingDeletes.groups||[]; pendingDeletes.trips=pendingDeletes.trips||[];
   if(sb){
     try{
       const {data:{session}}=await sb.auth.getSession();
