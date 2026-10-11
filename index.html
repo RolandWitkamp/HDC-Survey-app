@@ -379,6 +379,7 @@ const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_qYb6uO8K0HFi-Gfdirx8AA_0jX3duo
 const AUTH_HASH_TYPE = (()=>{ const m=location.hash.match(/type=([^&]+)/); return m?m[1]:null; })();
 const sb = window.supabase ? window.supabase.createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY) : null;
 let sbUser = null;
+let sbIsAdmin = false;
 let lastPushed = {surveys:{}, groups:{}, trips:{}};
 let pendingDeletes = {surveys:[], groups:[], trips:[]};
 let S = { surveys:[], groups:[], trips:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true };
@@ -500,7 +501,7 @@ function editDockHTML(s){
     <label class="btn dock-photo-btn" aria-label="Add photo">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
 }
 function render(){ window.scrollTo(0,0);
-  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin,setpassword:renderSetPassword})[view.name](); }
+  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin,setpassword:renderSetPassword,requestaccess:renderRequestAccess,approvals:renderApprovals,pending:renderPendingApproval})[view.name](); }
 
 function renderLogin(msg){
   $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
@@ -514,6 +515,7 @@ function renderLogin(msg){
       ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
       <button type="button" class="btn primary wide" style="margin-top:14px" data-a="login" ${sb?'':'disabled'}>Log in</button>
       <button type="button" class="link" style="margin-top:12px;display:block;text-align:center;width:100%" data-a="forgotpassword" ${sb?'':'disabled'}>Forgot password?</button>
+      <button type="button" class="link" style="margin-top:4px;display:block;text-align:center;width:100%" data-a="requestaccess" ${sb?'':'disabled'}>Request access with your @klm.com e-mail</button>
     </section>`;
   const pw=$('#loginPassword');
   pw?.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
@@ -535,6 +537,75 @@ async function doForgotPassword(){
     const {error}=await sb.auth.resetPasswordForEmail(email, {redirectTo: location.origin+location.pathname});
     renderLogin(error ? 'Could not send a reset e-mail. Check your connection and try again.' : 'Reset link sent — check your e-mail.');
   }catch(e){ renderLogin('Could not send a reset e-mail. Check your connection and try again.'); }
+}
+function renderRequestAccess(msg){
+  $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
+  setDock('');
+  $('#app').innerHTML = `
+    <section class="panel" style="margin-top:40px">
+      <h2>Request access</h2>
+      <p class="hint">Only @klm.com e-mail addresses can request access. A manager still has to approve your request before you can log in.</p>
+      <label class="f">@klm.com e-mail<input type="email" id="reqEmail" autocomplete="username" autocapitalize="off" placeholder="name@klm.com"></label>
+      <label class="f">Choose a password<input type="password" id="reqPassword" autocomplete="new-password"></label>
+      ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
+      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="requestaccesssubmit">Request access</button>
+      <button type="button" class="link" style="margin-top:12px;display:block;text-align:center;width:100%" data-a="backtologin">Back to log in</button>
+    </section>`;
+  $('#reqEmail')?.focus();
+}
+async function doRequestAccessSubmit(){
+  const email=$('#reqEmail')?.value.trim()||'', password=$('#reqPassword')?.value||'';
+  if(!email || !password){ renderRequestAccess('Enter your @klm.com e-mail and a password.'); return; }
+  if(password.length<8){ renderRequestAccess('Password must be at least 8 characters.'); return; }
+  try{
+    const {error}=await sb.auth.signUp({email,password});
+    if(error){ renderRequestAccess('Could not create an account. Only @klm.com e-mail addresses can request access, and each address can only be used once.'); return; }
+    renderLogin('Check your @klm.com inbox to confirm your address. After that, your request still needs approval before you can log in.');
+  }catch(e){ renderRequestAccess('Could not send the request. Check your connection and try again.'); }
+}
+let pendingStatus='waiting';
+function renderPendingApproval(){
+  $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
+  setDock('');
+  $('#app').innerHTML = `
+    <section class="panel" style="margin-top:40px">
+      <h2>${pendingStatus==='rejected'?'Request declined':'Waiting for approval'}</h2>
+      <p class="hint">${pendingStatus==='rejected'
+        ?'Your access request was declined. Contact Roland Witkamp if you believe this is a mistake.'
+        :'Your account is confirmed but still needs approval from a manager before you can use Pillow Report. Check back later.'}</p>
+      <button type="button" class="btn wide" style="margin-top:14px" data-a="logout">Log out</button>
+    </section>`;
+}
+function renderApprovals(){
+  setBar(`<button class="icon-btn" data-a="settings" aria-label="Back">←</button><h1>Pending requests</h1>`);
+  $('#app').innerHTML = `<section class="panel" id="approvalsPanel"><p class="hint">Loading…</p></section>`;
+  setDock('');
+  loadPendingApprovals();
+}
+async function loadPendingApprovals(){
+  const panel=$('#approvalsPanel'); if(!panel) return;
+  if(!sb || !sbUser){ panel.innerHTML='<p class="hint">Not available offline.</p>'; return; }
+  try{
+    const {data:rows,error}=await sb.from('profiles').select('*').eq('approved',false).eq('rejected',false).order('created_at',{ascending:true});
+    if(error || !rows){ panel.innerHTML='<p class="hint">Could not load requests. Check your connection.</p>'; return; }
+    panel.innerHTML = rows.length ? rows.map(r=>`
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:10px">
+        <b>${esc(r.email)}</b><p class="hint">Requested ${dateNL((r.created_at||'').slice(0,10))}</p>
+        <div class="actions" style="margin-top:8px">
+          <button type="button" class="btn primary" data-a="approveuser" data-uid="${r.id}">Approve</button>
+          <button type="button" class="btn danger" data-a="declineuser" data-uid="${r.id}">Decline</button>
+        </div>
+      </div>`).join('') : '<p class="hint">No pending requests.</p>';
+  }catch(e){ panel.innerHTML='<p class="hint">Could not load requests. Check your connection.</p>'; }
+}
+async function approveUser(uid){
+  try{ await sb.from('profiles').update({approved:true}).eq('id',uid); }catch(e){}
+  loadPendingApprovals();
+}
+async function declineUser(uid){
+  if(!confirm('Decline this request? They will not be able to use the app.')) return;
+  try{ await sb.from('profiles').update({rejected:true}).eq('id',uid); }catch(e){}
+  loadPendingApprovals();
 }
 function renderSetPassword(msg){
   $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
@@ -565,7 +636,7 @@ async function doSetNewPassword(){
 async function doLogout(){
   if(!confirm('Log out? Surveys already synced stay on the server; anything not yet synced on this device could be lost.')) return;
   try{ await sb.auth.signOut(); }catch(e){}
-  sbUser=null; S.surveys=[]; S.groups=[]; S.trips=[]; view={name:'login'}; render();
+  sbUser=null; sbIsAdmin=false; S.surveys=[]; S.groups=[]; S.trips=[]; view={name:'login'}; render();
 }
 
 function renderHome(){
@@ -1178,6 +1249,7 @@ function renderSettings(){
     </section>
     <section class="panel"><h2>Account</h2>
       <p class="hint">Logged in as <b>${esc(sbUser?.email||'')}</b>. Your surveys sync to the server automatically and stay private to your account.</p>
+      ${sbIsAdmin?'<button type="button" class="btn wide" style="margin-top:10px" data-a="approvals">Pending account requests</button>':''}
       <button type="button" class="btn wide danger" style="margin-top:10px" data-a="logout">Log out</button>
     </section>
     <section class="panel"><h2>Saved recipients</h2>
@@ -1423,6 +1495,12 @@ document.addEventListener('click', async e=>{
   else if(a==='logout'){ doLogout(); }
   else if(a==='forgotpassword'){ doForgotPassword(); }
   else if(a==='setnewpassword'){ doSetNewPassword(); }
+  else if(a==='requestaccess'){ view={name:'requestaccess'}; render(); }
+  else if(a==='requestaccesssubmit'){ doRequestAccessSubmit(); }
+  else if(a==='backtologin'){ view={name:'login'}; render(); }
+  else if(a==='approvals'){ view={name:'approvals'}; render(); }
+  else if(a==='approveuser'){ approveUser(b.dataset.uid); }
+  else if(a==='declineuser'){ declineUser(b.dataset.uid); }
   else if(a==='home'){view={name:'home'};render();}
   else if(a==='settings'){view={name:'settings'};render();}
   else if(a==='back-trip'){view={name:'trip',id:s?.tripId};render();}
@@ -2033,7 +2111,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.2.0';
+const APP_VERSION='2.3.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2335,6 +2413,17 @@ async function pullRemote(){
   }
 }
 async function bootUser(){
+  sbIsAdmin=false;
+  if(sb && sbUser && navigator.onLine){
+    try{
+      const {data:profile}=await sb.from('profiles').select('approved,rejected,is_admin').eq('id',sbUser.id).single();
+      if(profile){
+        sbIsAdmin=!!profile.is_admin;
+        if(profile.rejected){ pendingStatus='rejected'; view={name:'pending'}; render(); return; }
+        if(!profile.approved){ pendingStatus='waiting'; view={name:'pending'}; render(); return; }
+      }
+    }catch(e){}
+  }
   view={name:'home'}; render();
   await syncNow();
 }
