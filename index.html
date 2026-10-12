@@ -717,6 +717,7 @@ function renderEdit(){
     </section>`).join('')}`;
   setDock(editDockHTML(s));
   if(!s.f.driveTime) scheduleDriveTimeLookup(s);
+  if(s.photos.some(p=>!p.data)) ensurePhotosData(s.photos).then(()=>{ if(view.name==='edit' && view.id===s.id) refreshPhotosUI(s); });
 }
 function chipsHTML(s){ return SECTIONS.map(sec=>{ const n=sec.fields.filter(f=>isFlag(s,f)).length;
   return `<button type="button" data-a="jumpsec" data-id="${sec.id}" class="${n?'has-flag':''}">${sec.name}<b>${n?'! '+n:doneCount(s,sec.fields)+'/'+reqFields(sec.fields).length}</b></button>`; }).join(''); }
@@ -895,7 +896,7 @@ function fieldHTML(s,f){
 }
 function photosHTML(s){
   return s.photos.map(p=>`<div class="photo">
-    <div class="photo-img"><img src="${p.data}" alt="Photo"><button data-a="delphoto" data-pid="${p.id}" aria-label="Delete photo">×</button></div>
+    <div class="photo-img">${p.data?`<img src="${p.data}" alt="Photo">`:`<span class="hint">Loading…</span>`}<button data-a="delphoto" data-pid="${p.id}" aria-label="Delete photo">×</button></div>
     <input class="photo-label" data-photolabel="${p.id}" value="${esc(p.label)}" placeholder="Label, e.g. Breakfast">
   </div>`).join('');
 }
@@ -914,7 +915,8 @@ async function savePhotosToLibrary(s,photos){
   if(!all.length){ toast('No photos to save yet.'); return; }
   const list=all.filter(p=>!p.savedToLibrary);
   if(!list.length){ toast('These photos are already saved to the photo library.'); return; }
-  const files=list.map((p,i)=>dataUrlToFile(p.data,`${(p.label||'photo').replace(/[^a-z0-9]+/gi,'-')||'photo-'+(i+1)}.jpg`));
+  await ensurePhotosData(list);
+  const files=list.filter(p=>p.data).map((p,i)=>dataUrlToFile(p.data,`${(p.label||'photo').replace(/[^a-z0-9]+/gi,'-')||'photo-'+(i+1)}.jpg`));
   if(navigator.canShare?.({files})){
     try{ await shareGuard({files}); list.forEach(p=>p.savedToLibrary=true); touch(s); }
     catch(e){ if(e.name!=='AbortError') toast(`Saving failed (${e.name||'error'}: ${e.message||e}).`); }
@@ -1607,7 +1609,11 @@ document.addEventListener('click', async e=>{
     const aInput=document.querySelector('[data-top="address"]'); if(aInput) aInput.value=s.address;
     rerenderField(s,'hotelRating');
     scheduleDriveTimeLookup(s); scheduleAirQualityLookup(s); }
-  else if(a==='delphoto'){ s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); refreshPhotosUI(s); }
+  else if(a==='delphoto'){
+    const removed=s.photos.find(p=>p.id===b.dataset.pid);
+    s.photos=s.photos.filter(p=>p.id!==b.dataset.pid); touch(s); refreshPhotosUI(s);
+    if(removed?.storagePath && sb && sbUser){ sb.storage.from('photos').remove([removed.storagePath]).catch(()=>{}); }
+  }
   else if(a==='savephotos'){ savePhotosToLibrary(s); }
   else if(a==='addgroup'){ S.groups.push({id:uid(),name:'',to:'',cc:''}); persist(); render(); }
   else if(a==='delgroup'){ pendingDeletes.groups.push(b.dataset.gid); S.groups=S.groups.filter(g=>g.id!==b.dataset.gid); persist(); render(); }
@@ -2113,6 +2119,7 @@ async function exportClassicPdf(){
 
 async function sharePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
+  await ensurePhotosData(s.photos);
   let blob; try{ blob=makePdf(s,mapDataUrl); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
   const file=new File([blob],pdfName(s),{type:'application/pdf'});
   const {to,cc}=recipients(s);
@@ -2123,10 +2130,11 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.3.2';
+const APP_VERSION='2.4.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
+  await ensurePhotosData(s.photos);
   let blob; try{ blob=makePdf(s,mapDataUrl); }catch(e){ return toast('Could not create PDF: the PDF library did not load. Check your connection.'); }
   if(downloads){ try{ await downloads.save({filename:pdfName(s),data:blob}); toast('PDF saved'); }catch(e){ if(e?.code!=='declined') toast('Saving does not work here. Use Share with PDF instead.'); } return; }
   const file=new File([blob],pdfName(s),{type:'application/pdf'});
@@ -2306,6 +2314,7 @@ async function exportAllPdfs(){
   for(const s of S.surveys){
     try{
       const mapDataUrl=await getHotelMapDataUrl(s);
+      await ensurePhotosData(s.photos);
       const blob=makePdf(s,mapDataUrl);
       files.push(new File([blob],pdfName(s),{type:'application/pdf'}));
     }catch(e){}
@@ -2344,12 +2353,38 @@ async function syncNow(){
   try{ await pushDirty(); await pullRemote(); }catch(e){}
   syncing=false;
 }
+// Photo bytes never go through the surveys table (that's what caused the earlier
+// "statement timeout" on photo-heavy surveys) — they live in the "photos" Storage bucket,
+// one object per photo at "{owner}/{photoId}.jpg". A photo's bytes never change once captured,
+// so presence of photo.storagePath alone is enough to know "already uploaded", no separate
+// dirty-tracking needed.
+async function uploadPhotoIfNeeded(photo){
+  if(!sb || !sbUser || !navigator.onLine || photo.storagePath || !photo.data) return;
+  try{
+    const path=`${sbUser.id}/${photo.id}.jpg`;
+    const file=dataUrlToFile(photo.data,`${photo.id}.jpg`);
+    const {error}=await sb.storage.from('photos').upload(path,file,{contentType:'image/jpeg',upsert:true});
+    if(!error) photo.storagePath=path;
+  }catch(e){}
+}
+async function ensurePhotoData(photo){
+  if(photo.data || !photo.storagePath || !sb || !sbUser || !navigator.onLine) return;
+  try{
+    const {data,error}=await sb.storage.from('photos').download(photo.storagePath);
+    if(error || !data) return;
+    const dataUrl=await new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(data); });
+    photo.data=dataUrl; persist();
+  }catch(e){}
+}
+async function ensurePhotosData(photos){ for(const p of photos) await ensurePhotoData(p); }
 async function pushDirty(){
   if(!sb || !sbUser || !navigator.onLine) return;
   for(const s of S.surveys){
     if(lastPushed.surveys[s.id]===s.updated) continue;
     try{
-      const {error}=await sb.from('surveys').upsert({id:s.id, owner_id:sbUser.id, data:s, updated_at:new Date(s.updated||Date.now()).toISOString(), deleted:false});
+      for(const p of s.photos) await uploadPhotoIfNeeded(p);
+      const slim={...s, photos:s.photos.map(p=>({id:p.id,label:p.label,w:p.w,h:p.h,savedToLibrary:p.savedToLibrary,storagePath:p.storagePath}))};
+      const {error}=await sb.from('surveys').upsert({id:s.id, owner_id:sbUser.id, data:slim, updated_at:new Date(s.updated||Date.now()).toISOString(), deleted:false});
       if(!error) lastPushed.surveys[s.id]=s.updated;
     }catch(e){}
   }
