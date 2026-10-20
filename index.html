@@ -979,7 +979,6 @@ function scheduleHotelSuggest(s){
   hotelSuggestTimer=setTimeout(()=>fetchHotelSuggestions(s,q),450);
 }
 async function fetchHotelSuggestions(s,q){
-  if(!navigator.onLine) return;
   const box=document.querySelector('[data-hotel-suggest]'); if(!box) return;
   try{
     let searchQ=q;
@@ -1595,10 +1594,18 @@ document.addEventListener('click', async e=>{
     const box=b.closest('.ta-list'); box.hidden=true;
     let name, address, lat, lon;
     if(hotelSuggestCache.viaGoogle){
-      const place=await googlePlaceDetails(hit.place_id); if(!place) return;
-      name=place.name||hit.structured_formatting?.main_text||''; address=place.formatted_address||'';
-      lat=place.geometry?.location?.lat(); lon=place.geometry?.location?.lng();
-      if(place.rating!=null) s.f.hotelRating=`${place.rating}/5${place.user_ratings_total?` (${place.user_ratings_total} reviews)`:''}`;
+      const place=await googlePlaceDetails(hit.place_id);
+      if(place){
+        name=place.name||hit.structured_formatting?.main_text||''; address=place.formatted_address||'';
+        lat=place.geometry?.location?.lat(); lon=place.geometry?.location?.lng();
+        if(place.rating!=null) s.f.hotelRating=`${place.rating}/5${place.user_ratings_total?` (${place.user_ratings_total} reviews)`:''}`;
+      } else {
+        // Full place-details lookup failed (quota, network, API restriction, ...) -- still fill in
+        // what the prediction itself already told us rather than leaving both fields empty.
+        name=hit.structured_formatting?.main_text||hit.description||'';
+        address=hit.structured_formatting?.secondary_text||hit.description||'';
+        lat=null; lon=null;
+      }
     } else {
       name=hit.namedetails?.name||hit.display_name.split(',')[0]; address=hit.display_name||'';
       lat=parseFloat(hit.lat); lon=parseFloat(hit.lon);
@@ -2130,7 +2137,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.4.0';
+const APP_VERSION='2.4.1';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
