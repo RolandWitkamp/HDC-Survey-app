@@ -2172,7 +2172,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.4.3';
+const APP_VERSION='2.4.4';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2584,9 +2584,17 @@ async function bootUser(){
   else { view={name:'login'}; render(); }
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){
-    const hadController=!!navigator.serviceWorker.controller;
-    navigator.serviceWorker.register(`sw.js?v=${APP_VERSION}`).then(reg=>{ reg.update().catch(()=>{}); }).catch(()=>{});
-    navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(hadController) toast('New version installed. Close the app and reopen it.'); });
+    let swReg=null;
+    navigator.serviceWorker.register(`sw.js?v=${APP_VERSION}`).then(reg=>{ swReg=reg; reg.update().catch(()=>{}); }).catch(()=>{});
+    // Reload as soon as a newer service worker takes over, instead of asking the user to manually
+    // close and reopen the app -- on iOS "reopening" from the app switcher often just resumes the
+    // same suspended page rather than relaunching it, so the update silently never applied.
+    let reloaded=false;
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{ if(reloaded) return; reloaded=true; location.reload(); });
+    // A PWA resumed from the background (common on iOS) doesn't re-run this boot script, so an
+    // update sitting on the server since before it was backgrounded would otherwise go unnoticed
+    // until the next full cold launch. Re-check whenever the app becomes visible again.
+    document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && swReg) swReg.update().catch(()=>{}); });
   }
   addEventListener('online',()=>{ toast('Back online'); syncNow(); });
   addEventListener('offline',()=>toast('Offline. You can keep working as normal.'));
