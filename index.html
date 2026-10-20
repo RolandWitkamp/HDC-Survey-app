@@ -716,6 +716,23 @@ function renderEdit(){
       </div>
     </section>`).join('')}`;
   setDock(editDockHTML(s));
+  // A straight copy of the trip's city code happens instantly at survey creation (above); this
+  // catches the rest -- the trip's city field only had a plain name ("Amsterdam", no "AMS") so
+  // that copy came up empty, or this is an older survey from before that copy existed at all.
+  // Runs every time this screen opens with no city code yet, not just on a brand-new survey.
+  if(!s.city && s.tripId){
+    const trip=S.trips.find(t=>t.id===s.tripId);
+    if(trip?.city) resolveCityCode(trip.city).then(code=>{
+      if(!code || s.city) return;
+      s.city=code; touch(s);
+      if(view.name==='edit' && view.id===s.id){
+        const input=document.querySelector('[data-top="city"]');
+        if(input) input.value=code;
+        scheduleDriveTimeLookup(s);
+        scheduleHotelSuggest(s);
+      }
+    });
+  }
   if(!s.f.driveTime) scheduleDriveTimeLookup(s);
   if(s.photos.some(p=>!p.data)) ensurePhotosData(s.photos).then(()=>{ if(view.name==='edit' && view.id===s.id) refreshPhotosUI(s); });
 }
@@ -1622,20 +1639,6 @@ document.addEventListener('click', async e=>{
     const trip=curTrip(); if(!trip) return;
     const n={id:uid(),hotel:'',address:'',city:extractCityCode(trip.city),reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''},tripId:trip.id};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
-    // extractCityCode only catches an explicit 3-letter code already in the trip's city text
-    // ("Amsterdam, AMS") -- when the trip only has a plain city name ("Amsterdam"), look its
-    // code up against the airports dataset instead of leaving it for the user to type.
-    if(!n.city){
-      resolveCityCode(trip.city).then(code=>{
-        if(!code || n.city) return;
-        n.city=code; touch(n);
-        if(view.name==='edit' && view.id===n.id){
-          const input=document.querySelector('[data-top="city"]');
-          if(input) input.value=code;
-          scheduleDriveTimeLookup(n);
-        }
-      });
-    }
   }
   else if(a==='opentrip'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'trip',id:b.dataset.id}; render(); }
   else if(a==='swipedeletetrip'){ const trip=S.trips.find(x=>x.id===b.dataset.id); if(trip && deleteTrip(trip)){ render(); } else closeSwipes(); }
@@ -2232,7 +2235,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.5.2';
+const APP_VERSION='2.5.3';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
