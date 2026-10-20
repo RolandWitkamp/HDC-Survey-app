@@ -1325,7 +1325,7 @@ function renderSettings(){
         <li>Link a billing account — required, but your free monthly credit covers this usage comfortably.</li>
         <li>Go to "APIs & Services &gt; Library" and enable "Maps JavaScript API", "Directions API", "Places API" and "Geocoding API".</li>
         <li>Go to "APIs & Services &gt; Credentials &gt; Create Credentials &gt; API key".</li>
-        <li>Open the new key: under "Application restrictions" &gt; "Websites" set the address <code>rolandwitkamp.github.io/*</code>, and under "API restrictions" enable all four APIs above.</li>
+        <li>Open the new key: under "Application restrictions" &gt; "Websites" set the address <code>pillowreport.app/*</code>, and under "API restrictions" enable all four APIs above.</li>
         <li>Copy the key and paste it here.</li>
       </ol>
       <p class="hint" style="margin-top:8px">Already had a key for drive time? Go back to Credentials, open your existing key, and also enable "Places API" and "Geocoding API" under "API restrictions".</p>
@@ -2232,7 +2232,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.5.1';
+const APP_VERSION='2.5.2';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
