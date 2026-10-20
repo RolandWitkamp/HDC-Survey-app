@@ -956,11 +956,17 @@ async function geocode(query){
     const g=await googleGeocode(query);
     if(g) return g;
   }
-  const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`);
-  if(!res.ok) throw 0;
-  const list=await res.json();
-  if(!list.length) return null;
-  return {lat:parseFloat(list[0].lat), lon:parseFloat(list[0].lon)};
+  for(let attempt=0;attempt<2;attempt++){
+    try{
+      const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`);
+      if(res.ok){
+        const list=await res.json();
+        return list.length ? {lat:parseFloat(list[0].lat), lon:parseFloat(list[0].lon)} : null;
+      }
+    }catch(e){}
+    if(attempt===0) await new Promise(r=>setTimeout(r,600));
+  }
+  return null;
 }
 function formatDuration(sec){
   const mins=Math.round(sec/60);
@@ -1113,7 +1119,7 @@ function googleDrivingSeconds(from,to){
   });
 }
 async function tryFetchDriveTime(s){
-  if(!S.autoDriveTime || s.driveTimeAuto===false || !navigator.onLine) return;
+  if(!S.autoDriveTime || s.driveTimeAuto===false) return;
   const addr=(s.address||'').trim(), code=(s.city||'').trim();
   if(addr.length<5 || code.length!==3) return;
   try{
@@ -1131,10 +1137,14 @@ async function tryFetchDriveTime(s){
       } else s.driveTimeGoogleError='could not load the Google Maps library (check the key)';
     }
     if(dur==null){
-      const res=await fetch(`https://router.project-osrm.org/route/v1/driving/${hotelLoc.lon},${hotelLoc.lat};${airport.lon},${airport.lat}?overview=false`);
-      if(!res.ok) throw 0;
-      const data=await res.json();
-      dur=data?.routes?.[0]?.duration;
+      const osrmUrl=`https://router.project-osrm.org/route/v1/driving/${hotelLoc.lon},${hotelLoc.lat};${airport.lon},${airport.lat}?overview=false`;
+      for(let attempt=0;attempt<2 && dur==null;attempt++){
+        try{
+          const res=await fetch(osrmUrl);
+          if(res.ok){ const data=await res.json(); dur=data?.routes?.[0]?.duration; }
+        }catch(e){}
+        if(dur==null && attempt===0) await new Promise(r=>setTimeout(r,600));
+      }
     }
     if(dur==null) return;
     if((s.address||'').trim()!==addr || (s.city||'').trim()!==code) return;
@@ -2162,7 +2172,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.4.2';
+const APP_VERSION='2.4.3';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
