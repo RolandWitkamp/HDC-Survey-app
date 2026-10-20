@@ -925,15 +925,24 @@ async function savePhotosToLibrary(s,photos){
   toast('Sharing photos is not supported here (canShare said no).');
 }
 
+// A plain fetch() with no server response (silently dropped by a firewall, a dead captive
+// portal, ...) hangs on the browser's own TCP timeout, which can be well over a minute --
+// every network call below goes through this instead, so a stuck request fails fast and
+// visibly rather than leaving the UI stuck on "Searching…" forever.
+async function fetchWithTimeout(url,ms=8000,opts){
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),ms);
+  try{ return await fetch(url,{...opts,signal:ctrl.signal}); }
+  finally{ clearTimeout(timer); }
+}
 /* ---------- Driving time to airport (best-effort, via OpenStreetMap/OSRM) ---------- */
 let airportsData=null;
 async function loadAirportsData(){
   if(airportsData) return airportsData;
   const cached=await store.get('airportsData');
   if(cached){ airportsData=cached; return airportsData; }
-  if(!navigator.onLine) return null;
   try{
-    const res=await fetch('https://raw.githubusercontent.com/mwgg/Airports/master/airports.json');
+    const res=await fetchWithTimeout('https://raw.githubusercontent.com/mwgg/Airports/master/airports.json',12000);
     if(!res.ok) throw 0;
     const data=await res.json();
     airportsData=data; store.set('airportsData',data);
@@ -957,6 +966,21 @@ function extractCityCode(text){
 function cityNameFromTripText(text){
   return (text||'').replace(/\b[A-Z]{3}\b/gi,'').replace(/[,/]/g,' ').replace(/\s+/g,' ').trim();
 }
+// The trip's city field often has no explicit code at all ("Amsterdam", not "Amsterdam, AMS") --
+// look the city name up against the airports dataset to find its code too, not just the reverse.
+async function resolveCityCode(text){
+  const direct=extractCityCode(text);
+  if(direct) return direct;
+  const name=cityNameFromTripText(text);
+  if(!name) return '';
+  try{
+    const airports=await loadAirportsData();
+    if(!airports) return '';
+    const needle=name.toLowerCase();
+    const match=Object.values(airports).find(a=>(a.city||'').toLowerCase()===needle);
+    return match?.iata||'';
+  }catch(e){ return ''; }
+}
 async function cityNameForSurvey(s){
   const trip=S.trips.find(t=>t.id===s.tripId);
   const fromTrip=cityNameFromTripText(trip?.city);
@@ -974,7 +998,7 @@ async function geocode(query){
   }
   for(let attempt=0;attempt<2;attempt++){
     try{
-      const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`);
+      const res=await fetchWithTimeout(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`);
       if(res.ok){
         const list=await res.json();
         return list.length ? {lat:parseFloat(list[0].lat), lon:parseFloat(list[0].lon)} : null;
@@ -1018,7 +1042,7 @@ async function nominatimSearch(query){
   const url=`https://nominatim.openstreetmap.org/search?format=json&limit=5&namedetails=1&q=${encodeURIComponent(query)}`;
   for(let attempt=0;attempt<2;attempt++){
     try{
-      const res=await fetch(url);
+      const res=await fetchWithTimeout(url);
       if(res.ok) return await res.json();
     }catch(e){}
     if(attempt===0) await new Promise(r=>setTimeout(r,600));
@@ -1162,7 +1186,7 @@ async function tryFetchDriveTime(s){
       const osrmUrl=`https://router.project-osrm.org/route/v1/driving/${hotelLoc.lon},${hotelLoc.lat};${airport.lon},${airport.lat}?overview=false`;
       for(let attempt=0;attempt<2 && dur==null;attempt++){
         try{
-          const res=await fetch(osrmUrl);
+          const res=await fetchWithTimeout(osrmUrl);
           if(res.ok){ const data=await res.json(); dur=data?.routes?.[0]?.duration; }
         }catch(e){}
         if(dur==null && attempt===0) await new Promise(r=>setTimeout(r,600));
@@ -1191,12 +1215,12 @@ function scheduleAirQualityLookup(s){
   aqiTimer=setTimeout(()=>tryFetchAirQuality(s),800);
 }
 async function tryFetchAirQuality(s){
-  if(!S.autoAirQuality || s.airQualityAuto===false || !navigator.onLine || !S.waqiToken) return;
+  if(!S.autoAirQuality || s.airQualityAuto===false || !S.waqiToken) return;
   const addr=(s.address||'').trim(); if(addr.length<5) return;
   try{
     const hotelLoc=(s.hotelLat!=null && s.hotelLon!=null) ? {lat:s.hotelLat, lon:s.hotelLon} : await geocode(addr);
     if(!hotelLoc) return;
-    const res=await fetch(`https://api.waqi.info/feed/geo:${hotelLoc.lat};${hotelLoc.lon}/?token=${encodeURIComponent(S.waqiToken)}`);
+    const res=await fetchWithTimeout(`https://api.waqi.info/feed/geo:${hotelLoc.lat};${hotelLoc.lon}/?token=${encodeURIComponent(S.waqiToken)}`);
     if(!res.ok) throw 0;
     const data=await res.json();
     if(data.status!=='ok' || data.data?.aqi==null){ s.airQualityError=data.data||data.status; return; }
@@ -1598,6 +1622,20 @@ document.addEventListener('click', async e=>{
     const trip=curTrip(); if(!trip) return;
     const n={id:uid(),hotel:'',address:'',city:extractCityCode(trip.city),reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''},tripId:trip.id};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
+    // extractCityCode only catches an explicit 3-letter code already in the trip's city text
+    // ("Amsterdam, AMS") -- when the trip only has a plain city name ("Amsterdam"), look its
+    // code up against the airports dataset instead of leaving it for the user to type.
+    if(!n.city){
+      resolveCityCode(trip.city).then(code=>{
+        if(!code || n.city) return;
+        n.city=code; touch(n);
+        if(view.name==='edit' && view.id===n.id){
+          const input=document.querySelector('[data-top="city"]');
+          if(input) input.value=code;
+          scheduleDriveTimeLookup(n);
+        }
+      });
+    }
   }
   else if(a==='opentrip'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'trip',id:b.dataset.id}; render(); }
   else if(a==='swipedeletetrip'){ const trip=S.trips.find(x=>x.id===b.dataset.id); if(trip && deleteTrip(trip)){ render(); } else closeSwipes(); }
@@ -2194,7 +2232,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.5.0';
+const APP_VERSION='2.5.1';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
