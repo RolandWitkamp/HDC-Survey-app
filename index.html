@@ -945,6 +945,12 @@ function findAirportByIata(data,code){
   const up=code.trim().toUpperCase();
   return Object.values(data).find(a=>a.iata===up)||null;
 }
+// Trip-level "City / airport code" is free text (placeholder "e.g. Riyadh, RUH"), so pull the
+// 3-letter code out of it for a new survey's City code field instead of requiring it be retyped.
+function extractCityCode(text){
+  const m=(text||'').toUpperCase().match(/\b([A-Z]{3})\b/);
+  return m?m[1]:'';
+}
 async function geocode(query){
   if(S.googleMapsKey && await loadGoogleMaps()){
     const g=await googleGeocode(query);
@@ -978,8 +984,20 @@ function scheduleHotelSuggest(s){
   if(!S.autoAddress || q.length<3){ if(box){box.hidden=true; box.innerHTML='';} return; }
   hotelSuggestTimer=setTimeout(()=>fetchHotelSuggestions(s,q),450);
 }
+async function nominatimSearch(query){
+  const url=`https://nominatim.openstreetmap.org/search?format=json&limit=5&namedetails=1&q=${encodeURIComponent(query)}`;
+  for(let attempt=0;attempt<2;attempt++){
+    try{
+      const res=await fetch(url);
+      if(res.ok) return await res.json();
+    }catch(e){}
+    if(attempt===0) await new Promise(r=>setTimeout(r,600));
+  }
+  throw new Error('nominatim-failed');
+}
 async function fetchHotelSuggestions(s,q){
   const box=document.querySelector('[data-hotel-suggest]'); if(!box) return;
+  let searchFailed=false;
   try{
     let searchQ=q;
     const code=(s.city||'').trim();
@@ -991,13 +1009,20 @@ async function fetchHotelSuggestions(s,q){
       if(preds.length){ list=preds.slice(0,5); viaGoogle=true; }
     }
     if(!viaGoogle){
-      const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&namedetails=1&q=${encodeURIComponent(searchQ)}`);
-      if(!res.ok) throw 0;
-      list=await res.json();
+      try{
+        list=await nominatimSearch(searchQ);
+        // A city appended to the query can occasionally over-narrow it -- fall back to the
+        // plain hotel name alone before giving up.
+        if(!list.length && searchQ!==q) list=await nominatimSearch(q);
+      }catch(e){ searchFailed=true; }
       if((s.hotel||'').trim()!==q) return;
     }
     hotelSuggestCache={viaGoogle,list};
-    if(!list.length){ box.hidden=true; box.innerHTML=''; return; }
+    if(!list.length){
+      if(searchFailed){ box.hidden=false; box.innerHTML=`<div class="hint" style="padding:10px 12px">Couldn't search for hotels right now — check your connection and try again.</div>`; }
+      else { box.hidden=true; box.innerHTML=''; }
+      return;
+    }
     box.innerHTML = viaGoogle
       ? list.map((p,i)=>`<button type="button" data-a="pickhotel" data-i="${i}"><b>${esc(p.structured_formatting?.main_text||p.description)}</b><br><span class="hint">${esc(p.structured_formatting?.secondary_text||p.description)}</span></button>`).join('')
       : list.map((hit,i)=>{ const name=hit.namedetails?.name||hit.display_name.split(',')[0];
@@ -1539,7 +1564,7 @@ document.addEventListener('click', async e=>{
   }
   else if(a==='newsurvey'){
     const trip=curTrip(); if(!trip) return;
-    const n={id:uid(),hotel:'',address:'',city:'',reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''},tripId:trip.id};
+    const n={id:uid(),hotel:'',address:'',city:extractCityCode(trip.city),reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''},tripId:trip.id};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
   }
   else if(a==='opentrip'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'trip',id:b.dataset.id}; render(); }
@@ -2137,7 +2162,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.4.1';
+const APP_VERSION='2.4.2';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
