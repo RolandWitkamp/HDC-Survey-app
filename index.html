@@ -685,11 +685,11 @@ function renderEdit(){
     <div class="chips-wrap"><nav class="chips" id="chips" aria-label="Sections">${chipsHTML(s)}</nav><button type="button" class="icon-btn chips-collapse" data-a="collapseall" aria-label="Collapse all">${ICON.collapse}</button></div>
     <section class="panel" id="sec-hotel">
       <h2>Hotel</h2>
+      <label class="f">City code<input data-top="city" value="${esc(s.city)}" autocapitalize="characters" maxlength="3" placeholder="e.g. NBO"></label>
       <div class="ta-wrap"><label class="f">Hotel name<input data-top="hotel" value="${esc(s.hotel)}" autocomplete="off"></label>
         <div class="ta-list" data-hotel-suggest hidden></div>
       </div>
       <label class="f">Address<input data-top="address" value="${esc(s.address)}" placeholder="Street, city, country" autocomplete="off"></label>
-      <label class="f">City code<input data-top="city" value="${esc(s.city)}" autocapitalize="characters" maxlength="3" placeholder="e.g. NBO"></label>
       <label class="f">Date</label>
       <div class="grid3">${dateSelectHTML(s)}</div>
       <label class="f">Hodaco Rep<input data-top="reps" value="${esc(s.reps)}"></label>
@@ -951,6 +951,22 @@ function extractCityCode(text){
   const m=(text||'').toUpperCase().match(/\b([A-Z]{3})\b/);
   return m?m[1]:'';
 }
+// Same trip-level free text, but for a readable city NAME instead of the code -- strip the code
+// itself and stray punctuation, so "Riyadh, RUH" becomes "Riyadh". Used to scope hotel search to
+// the right city without a network round-trip in the common case.
+function cityNameFromTripText(text){
+  return (text||'').replace(/\b[A-Z]{3}\b/gi,'').replace(/[,/]/g,' ').replace(/\s+/g,' ').trim();
+}
+async function cityNameForSurvey(s){
+  const trip=S.trips.find(t=>t.id===s.tripId);
+  const fromTrip=cityNameFromTripText(trip?.city);
+  if(fromTrip) return fromTrip;
+  const code=(s.city||'').trim();
+  if(code.length===3){
+    try{ const airports=await loadAirportsData(); const airport=findAirportByIata(airports,code); if(airport?.city) return airport.city; }catch(e){}
+  }
+  return '';
+}
 async function geocode(query){
   if(S.googleMapsKey && await loadGoogleMaps()){
     const g=await googleGeocode(query);
@@ -987,7 +1003,15 @@ function scheduleHotelSuggest(s){
   clearTimeout(hotelSuggestTimer);
   const box=document.querySelector('[data-hotel-suggest]');
   const q=(s.hotel||'').trim();
+  const code=(s.city||'').trim();
   if(!S.autoAddress || q.length<3){ if(box){box.hidden=true; box.innerHTML='';} return; }
+  // Hotel search is always scoped to the city code -- searching "Marriott" with no city would
+  // return Marriotts from anywhere in the world, so require the code first instead.
+  if(code.length!==3){
+    if(box){ box.hidden=false; box.innerHTML='<div class="hint" style="padding:10px 12px">Fill in the city code above to search for hotels.</div>'; }
+    return;
+  }
+  if(box){ box.hidden=false; box.innerHTML='<div class="hint" style="padding:10px 12px">Searching…</div>'; }
   hotelSuggestTimer=setTimeout(()=>fetchHotelSuggestions(s,q),450);
 }
 async function nominatimSearch(query){
@@ -1003,11 +1027,12 @@ async function nominatimSearch(query){
 }
 async function fetchHotelSuggestions(s,q){
   const box=document.querySelector('[data-hotel-suggest]'); if(!box) return;
+  const code=(s.city||'').trim();
   let searchFailed=false;
   try{
-    let searchQ=q;
-    const code=(s.city||'').trim();
-    if(code.length===3){ const airports=await loadAirportsData(); const airport=findAirportByIata(airports,code); if(airport?.city) searchQ=`${q}, ${airport.city}`; }
+    const cityName=await cityNameForSurvey(s);
+    if((s.hotel||'').trim()!==q || (s.city||'').trim()!==code) return;
+    const searchQ=`${q}, ${cityName||code}`;
     let list=[], viaGoogle=false;
     if(S.googleMapsKey && await loadGoogleMaps() && ensurePlacesServices()){
       const preds=await googlePlacePredictions(searchQ);
@@ -1015,18 +1040,15 @@ async function fetchHotelSuggestions(s,q){
       if(preds.length){ list=preds.slice(0,5); viaGoogle=true; }
     }
     if(!viaGoogle){
-      try{
-        list=await nominatimSearch(searchQ);
-        // A city appended to the query can occasionally over-narrow it -- fall back to the
-        // plain hotel name alone before giving up.
-        if(!list.length && searchQ!==q) list=await nominatimSearch(q);
-      }catch(e){ searchFailed=true; }
+      try{ list=await nominatimSearch(searchQ); }catch(e){ searchFailed=true; }
       if((s.hotel||'').trim()!==q) return;
     }
     hotelSuggestCache={viaGoogle,list};
     if(!list.length){
-      if(searchFailed){ box.hidden=false; box.innerHTML=`<div class="hint" style="padding:10px 12px">Couldn't search for hotels right now — check your connection and try again.</div>`; }
-      else { box.hidden=true; box.innerHTML=''; }
+      box.hidden=false;
+      box.innerHTML = searchFailed
+        ? `<div class="hint" style="padding:10px 12px">Couldn't search for hotels right now — check your connection and try again.</div>`
+        : `<div class="hint" style="padding:10px 12px">No hotels found for "${esc(q)}" in ${esc(cityName||code)}.</div>`;
       return;
     }
     box.innerHTML = viaGoogle
@@ -1709,7 +1731,7 @@ document.addEventListener('input', e=>{
     else { let v=el.value; if(d.top==='city'){ v=v.toUpperCase(); if(el.value!==v) el.value=v; } s[d.top]=v;
       if(d.top==='hotel'){ $('#bar h1').textContent=title(s); scheduleHotelSuggest(s); }
       if(d.top==='address'){ s.hotelLat=null; s.hotelLon=null; scheduleDriveTimeLookup(s); scheduleAirQualityLookup(s); }
-      if(d.top==='city'){ scheduleDriveTimeLookup(s); if(!(s.address||'').trim()) scheduleHotelSuggest(s); } }
+      if(d.top==='city'){ scheduleDriveTimeLookup(s); scheduleHotelSuggest(s); } }
     touch(s);
   }
   else if(d.set==='defRep'){ S.defaultRep=el.value; persist(); }
@@ -2172,7 +2194,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.4.4';
+const APP_VERSION='2.5.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
