@@ -2235,7 +2235,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.5.3';
+const APP_VERSION='2.5.4';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2634,12 +2634,21 @@ async function bootUser(){
   await loadLocalData();
   if(sb){
     try{
-      const {data:{session}}=await sb.auth.getSession();
-      sbUser=session?.user||null;
+      // Registered BEFORE getSession(), not after: a recovery/invite link's session comes from
+      // Supabase parsing the #access_token in the URL, which happens asynchronously and can still
+      // be in flight when getSession() resolves. If the listener were attached afterwards (as it
+      // was before), that event could fire into nothing and the app would fall through to the
+      // normal login screen instead of the set-password screen -- which is exactly what was
+      // happening. Reacting to it here, whenever it actually lands, closes that race.
       sb.auth.onAuthStateChange((event,session)=>{
         sbUser=session?.user||null;
+        if(sbUser && (event==='PASSWORD_RECOVERY' || AUTH_HASH_TYPE==='invite' || AUTH_HASH_TYPE==='recovery')){
+          view={name:'setpassword'}; render(); return;
+        }
         if(!sbUser && view.name!=='login' && view.name!=='setpassword'){ view={name:'login'}; render(); }
       });
+      const {data:{session}}=await sb.auth.getSession();
+      sbUser=session?.user||null;
     }catch(e){ sbUser=null; }
   }
   if(sbUser && (AUTH_HASH_TYPE==='invite' || AUTH_HASH_TYPE==='recovery')){ view={name:'setpassword'}; render(); }
