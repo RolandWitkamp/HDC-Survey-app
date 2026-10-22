@@ -2280,7 +2280,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.6.3';
+const APP_VERSION='2.7.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2611,6 +2611,23 @@ async function pullRemote(){
 }
 async function loadLocalData(){
   await store.open();
+  // The local store (surveys-v2/groups/trips) is one shared bucket per browser, not scoped per
+  // Supabase account -- if a different account is now signed in than last time this browser used
+  // the app (two colleagues sharing a device, or just testing multiple accounts in the same
+  // browser profile/private-browsing session), the previous account's surveys would otherwise
+  // still be sitting here, get shown as if they belonged to the new account, and then get pushed
+  // to the server stamped with the NEW account's owner_id on the next sync -- a real data leak
+  // and corruption risk, not just a display glitch. Wiped here whenever the signed-in user
+  // actually changes; sbUser isn't known yet on the very first call during boot, only on the
+  // second call from bootUser(), which is where this actually runs.
+  if(sbUser){
+    const lastUserId=await store.get('lastUserId');
+    if(lastUserId && lastUserId!==sbUser.id){
+      await store.set('surveys-v2',[]); await store.set('groups',[]); await store.set('trips',[]);
+      await store.set('syncPushed',{}); await store.set('syncDeletes',{});
+    }
+    await store.set('lastUserId',sbUser.id);
+  }
   S.surveys=(await store.get('surveys-v2'))||[]; S.groups=(await store.get('groups'))||[]; S.defaultRep=(await store.get('defaultRep'))||'';
   const savedAutoDrive=await store.get('autoDriveTime'); S.autoDriveTime = savedAutoDrive===undefined ? true : savedAutoDrive;
   const savedAutoAddress=await store.get('autoAddress'); S.autoAddress = savedAutoAddress===undefined ? true : savedAutoAddress;
