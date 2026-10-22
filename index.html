@@ -2280,7 +2280,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.7.0';
+const APP_VERSION='2.7.1';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2696,14 +2696,15 @@ async function bootUser(){
   await loadLocalData();
   if(sb){
     try{
-      // A fresh invite/recovery link carries its own brand-new session -- but if this browser
-      // tab already had a different account signed in (e.g. testing a colleague's invite while
-      // still logged in as yourself), that OLD stored session can win the race against the new
-      // one: the screen flips briefly to set-password, then lands on the OLD account's home page
-      // instead of the new account's. Clearing any existing local session first removes that old
-      // session from the race entirely -- the fresh one from the URL still gets established
-      // normally right after, via the listener below.
-      if(AUTH_HASH_TYPE==='invite' || AUTH_HASH_TYPE==='recovery'){
+      // Arriving here via ANY auth link -- a working invite/recovery link, or one that turned out
+      // expired/already-used -- means the visitor's intent was to act on that specific link, so an
+      // unrelated session already sitting in this browser (e.g. still logged in as yourself while
+      // testing a colleague's link) should never be silently shown instead: a working link should
+      // land on its own fresh account, and a dead link should show the "expired" message, not
+      // whoever happened to already be signed in. Clearing any existing local session up front
+      // removes that old session from the picture entirely either way -- a working link's fresh
+      // session still gets established normally right after, via the listener below.
+      if(AUTH_HASH_TYPE==='invite' || AUTH_HASH_TYPE==='recovery' || AUTH_HASH_ERROR){
         try{ await sb.auth.signOut({scope:'local'}); }catch(e){}
       }
       // Registered BEFORE getSession(), not after: a recovery/invite link's session comes from
