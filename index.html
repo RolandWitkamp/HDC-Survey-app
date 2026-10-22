@@ -382,6 +382,19 @@ const AUTH_HASH_TYPE = (()=>{ const m=location.hash.match(/type=([^&]+)/); retur
 // otp_expired&error_description=... instead of a token -- previously this fell straight through
 // to a plain, unexplained login screen with no sign anything had gone wrong with the link itself.
 const AUTH_HASH_ERROR = (()=>{ const m=location.hash.match(/error_description=([^&]+)/); return m?decodeURIComponent(m[1].replace(/\+/g,' ')):null; })();
+// Invite/recovery links kept showing up already-expired even on a fresh click in a clean browser
+// -- email security scanners (corporate gateways, Apple Mail's own link-safety check) silently
+// visit links in e-mails to scan them before the real person ever taps one, and since Supabase's
+// confirmation link is a single-use token, that automated visit burns it. The real confirmation
+// URL travels inside the URL *fragment* instead of as the visible link itself (set up via the
+// Supabase email template, see supabase_schema.sql) -- fragments are never sent in an HTTP
+// request, so a scanner fetching this page's URL never sees it at all, only JavaScript running in
+// an actual browser can read it. It's then only used after an explicit tap (renderConfirmLink),
+// never automatically on page load, so even a scanner that does run JavaScript can't trigger it.
+// The real URL (embedded raw by the Supabase email template, see supabase_schema.sql) has its
+// own "&"-separated params, so this takes everything after "confirm=" rather than stopping at the
+// first "&" the way the other hash parsers above do -- it's always the last thing in the fragment.
+const AUTH_CONFIRM_URL = (()=>{ const m=location.hash.match(/^#confirm=(.+)$/); return m?m[1]:null; })();
 const sb = window.supabase ? window.supabase.createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY) : null;
 let sbUser = null;
 let sbIsAdmin = false;
@@ -509,7 +522,18 @@ function editDockHTML(s){
     <label class="btn dock-photo-btn" aria-label="Add photo">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
 }
 function render(){ window.scrollTo(0,0);
-  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin,forgotpassword:renderForgotPassword,setpassword:renderSetPassword,requestaccess:renderRequestAccess,approvals:renderApprovals,pending:renderPendingApproval})[view.name](); }
+  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin,forgotpassword:renderForgotPassword,setpassword:renderSetPassword,requestaccess:renderRequestAccess,approvals:renderApprovals,pending:renderPendingApproval,confirmlink:renderConfirmLink})[view.name](); }
+
+function renderConfirmLink(){
+  $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
+  setDock('');
+  $('#app').innerHTML = `
+    <section class="panel" style="margin-top:40px">
+      <h2>Confirm it's you</h2>
+      <p class="hint">Tap below to continue. This extra step stops automated e-mail security scanners from using up your link before you get the chance to.</p>
+      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="confirmlinkgo">Continue</button>
+    </section>`;
+}
 
 function renderLogin(msg){
   $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
@@ -1649,6 +1673,7 @@ document.addEventListener('click', async e=>{
   if(a==='login'){ doLogin(); }
   else if(a==='logout'){ doLogout(); }
   else if(a==='forgotpassword'){ view={name:'forgotpassword'}; render(); }
+  else if(a==='confirmlinkgo'){ if(AUTH_CONFIRM_URL) location.href=AUTH_CONFIRM_URL; }
   else if(a==='sendresetlink'){ doSendResetLink(); }
   else if(a==='setnewpassword'){ doSetNewPassword(); }
   else if(a==='requestaccess'){ view={name:'requestaccess'}; render(); }
@@ -2280,7 +2305,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.7.1';
+const APP_VERSION='2.8.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2693,6 +2718,9 @@ async function bootUser(){
 
 /* ---------- Boot ---------- */
 (async()=>{
+  // A wrapped confirmation link -- show only the "Continue" button and stop; nothing about
+  // sessions or local data matters until that's tapped, see AUTH_CONFIRM_URL above.
+  if(AUTH_CONFIRM_URL){ view={name:'confirmlink'}; render(); return; }
   await loadLocalData();
   if(sb){
     try{
