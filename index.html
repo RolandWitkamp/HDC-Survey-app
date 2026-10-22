@@ -2280,7 +2280,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.6.2';
+const APP_VERSION='2.6.3';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2679,6 +2679,16 @@ async function bootUser(){
   await loadLocalData();
   if(sb){
     try{
+      // A fresh invite/recovery link carries its own brand-new session -- but if this browser
+      // tab already had a different account signed in (e.g. testing a colleague's invite while
+      // still logged in as yourself), that OLD stored session can win the race against the new
+      // one: the screen flips briefly to set-password, then lands on the OLD account's home page
+      // instead of the new account's. Clearing any existing local session first removes that old
+      // session from the race entirely -- the fresh one from the URL still gets established
+      // normally right after, via the listener below.
+      if(AUTH_HASH_TYPE==='invite' || AUTH_HASH_TYPE==='recovery'){
+        try{ await sb.auth.signOut({scope:'local'}); }catch(e){}
+      }
       // Registered BEFORE getSession(), not after: a recovery/invite link's session comes from
       // Supabase parsing the #access_token in the URL, which happens asynchronously and can still
       // be in flight when getSession() resolves. If the listener were attached afterwards (as it
