@@ -509,7 +509,7 @@ function editDockHTML(s){
     <label class="btn dock-photo-btn" aria-label="Add photo">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
 }
 function render(){ window.scrollTo(0,0);
-  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin,setpassword:renderSetPassword,requestaccess:renderRequestAccess,approvals:renderApprovals,pending:renderPendingApproval})[view.name](); }
+  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin,forgotpassword:renderForgotPassword,setpassword:renderSetPassword,requestaccess:renderRequestAccess,approvals:renderApprovals,pending:renderPendingApproval})[view.name](); }
 
 function renderLogin(msg){
   $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
@@ -548,17 +548,29 @@ async function doLogin(){
     sbUser=data.user; await bootUser();
   }catch(e){ renderLogin('Could not log in. Check your connection and try again.'); }
 }
-async function doForgotPassword(){
-  const input=$('#loginEmail')?.value.trim()||'';
-  if(!input){ renderLogin('Enter your username or e-mail above first, then tap "Forgot password?" again.'); return; }
+function renderForgotPassword(msg){
+  $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
+  setDock('');
+  $('#app').innerHTML = `
+    <section class="panel" style="margin-top:40px">
+      <h2>Reset your password</h2>
+      <p class="hint">Enter your e-mail and we'll send you a reset link.</p>
+      <label class="f">E-mail<input type="email" id="fpEmail" autocomplete="username" autocapitalize="off"></label>
+      ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
+      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="sendresetlink">Send reset link</button>
+      <button type="button" class="link" style="margin-top:12px;display:block;text-align:center;width:100%" data-a="backtologin">Back to log in</button>
+    </section>`;
+  const inp=$('#fpEmail');
+  inp?.addEventListener('keydown', e=>{ if(e.key==='Enter') doSendResetLink(); });
+  inp?.focus();
+}
+async function doSendResetLink(){
+  const email=$('#fpEmail')?.value.trim()||'';
+  if(!email){ renderForgotPassword('Enter your e-mail address.'); return; }
   try{
-    const email=await resolveLoginEmail(input);
-    // Same message whether or not the username/e-mail actually exists -- otherwise this field
-    // becomes a way to probe which usernames are registered.
-    if(!email){ renderLogin('Reset link sent — check your e-mail.'); return; }
     const {error}=await sb.auth.resetPasswordForEmail(email, {redirectTo: location.origin+location.pathname});
-    renderLogin(error ? 'Could not send a reset e-mail. Check your connection and try again.' : 'Reset link sent — check your e-mail.');
-  }catch(e){ renderLogin('Could not send a reset e-mail. Check your connection and try again.'); }
+    renderForgotPassword(error ? 'Could not send a reset e-mail. Check your connection and try again.' : 'Reset link sent — check your e-mail.');
+  }catch(e){ renderForgotPassword('Could not send a reset e-mail. Check your connection and try again.'); }
 }
 function renderRequestAccess(msg){
   $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
@@ -1634,7 +1646,8 @@ document.addEventListener('click', async e=>{
   const a=b.dataset.a, s=cur();
   if(a==='login'){ doLogin(); }
   else if(a==='logout'){ doLogout(); }
-  else if(a==='forgotpassword'){ doForgotPassword(); }
+  else if(a==='forgotpassword'){ view={name:'forgotpassword'}; render(); }
+  else if(a==='sendresetlink'){ doSendResetLink(); }
   else if(a==='setnewpassword'){ doSetNewPassword(); }
   else if(a==='requestaccess'){ view={name:'requestaccess'}; render(); }
   else if(a==='requestaccesssubmit'){ doRequestAccessSubmit(); }
@@ -2265,7 +2278,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.6.0';
+const APP_VERSION='2.6.1';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
