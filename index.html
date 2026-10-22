@@ -378,6 +378,10 @@ const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_qYb6uO8K0HFi-Gfdirx8AA_0jX3duo
 // Captured before Supabase's client has a chance to process/clear the URL, so an invite or
 // password-reset link's flow type survives even though both just land the user in a session.
 const AUTH_HASH_TYPE = (()=>{ const m=location.hash.match(/type=([^&]+)/); return m?m[1]:null; })();
+// An expired or already-used invite/recovery link redirects here with #error=...&error_code=
+// otp_expired&error_description=... instead of a token -- previously this fell straight through
+// to a plain, unexplained login screen with no sign anything had gone wrong with the link itself.
+const AUTH_HASH_ERROR = (()=>{ const m=location.hash.match(/error_description=([^&]+)/); return m?decodeURIComponent(m[1].replace(/\+/g,' ')):null; })();
 const sb = window.supabase ? window.supabase.createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY) : null;
 let sbUser = null;
 let sbIsAdmin = false;
@@ -514,7 +518,7 @@ function renderLogin(msg){
     <section class="panel" style="margin-top:40px">
       <h2>Log in</h2>
       <p class="hint">${sb?'Log in with your Pillow Report account.':'Login is unavailable: the Supabase library did not load. Check your connection and reopen the app.'}</p>
-      <label class="f">E-mail<input type="email" id="loginEmail" autocomplete="username" autocapitalize="off"></label>
+      <label class="f">Username or e-mail<input type="text" id="loginEmail" autocomplete="username" autocapitalize="off"></label>
       <label class="f">Password<input type="password" id="loginPassword" autocomplete="current-password"></label>
       ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
       <button type="button" class="btn primary wide" style="margin-top:14px" data-a="login" ${sb?'':'disabled'}>Log in</button>
@@ -525,19 +529,33 @@ function renderLogin(msg){
   pw?.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
   $('#loginEmail')?.focus();
 }
+// Resolves whatever was typed in the username/e-mail field to a real e-mail for Supabase auth
+// calls, which only ever accept an e-mail -- a plain "@" check is enough since a username can
+// never contain one (enforced by set_own_username's character check).
+async function resolveLoginEmail(input){
+  if(input.includes('@')) return input;
+  try{ const {data}=await sb.rpc('username_to_email',{uname:input}); return data||null; }
+  catch(e){ return null; }
+}
 async function doLogin(){
-  const email=$('#loginEmail')?.value.trim()||'', password=$('#loginPassword')?.value||'';
-  if(!email || !password){ renderLogin('Enter your e-mail and password.'); return; }
+  const input=$('#loginEmail')?.value.trim()||'', password=$('#loginPassword')?.value||'';
+  if(!input || !password){ renderLogin('Enter your username/e-mail and password.'); return; }
   try{
+    const email=await resolveLoginEmail(input);
+    if(!email){ renderLogin('Incorrect username/e-mail or password.'); return; }
     const {data,error}=await sb.auth.signInWithPassword({email,password});
-    if(error || !data?.user){ renderLogin('Incorrect e-mail or password.'); return; }
+    if(error || !data?.user){ renderLogin('Incorrect username/e-mail or password.'); return; }
     sbUser=data.user; await bootUser();
   }catch(e){ renderLogin('Could not log in. Check your connection and try again.'); }
 }
 async function doForgotPassword(){
-  const email=$('#loginEmail')?.value.trim()||'';
-  if(!email){ renderLogin('Enter your e-mail above first, then tap "Forgot password?" again.'); return; }
+  const input=$('#loginEmail')?.value.trim()||'';
+  if(!input){ renderLogin('Enter your username or e-mail above first, then tap "Forgot password?" again.'); return; }
   try{
+    const email=await resolveLoginEmail(input);
+    // Same message whether or not the username/e-mail actually exists -- otherwise this field
+    // becomes a way to probe which usernames are registered.
+    if(!email){ renderLogin('Reset link sent — check your e-mail.'); return; }
     const {error}=await sb.auth.resetPasswordForEmail(email, {redirectTo: location.origin+location.pathname});
     renderLogin(error ? 'Could not send a reset e-mail. Check your connection and try again.' : 'Reset link sent — check your e-mail.');
   }catch(e){ renderLogin('Could not send a reset e-mail. Check your connection and try again.'); }
@@ -620,27 +638,39 @@ async function declineUser(uid){
   loadPendingApprovals();
 }
 function renderSetPassword(msg){
+  const isInvite=AUTH_HASH_TYPE==='invite';
   $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
   setDock('');
   $('#app').innerHTML = `
     <section class="panel" style="margin-top:40px">
-      <h2>${AUTH_HASH_TYPE==='invite'?'Welcome — set your password':'Set a new password'}</h2>
-      <p class="hint">Choose a password for your Pillow Report account${sbUser?.email?' ('+esc(sbUser.email)+')':''}.</p>
+      <h2>${isInvite?'Welcome — set up your account':'Set a new password'}</h2>
+      <p class="hint">${isInvite?'Choose a username and password':'Choose a password'} for your Pillow Report account${sbUser?.email?' ('+esc(sbUser.email)+')':''}.</p>
+      ${isInvite?`<label class="f">Username<input id="newUsername" autocomplete="username" autocapitalize="off" placeholder="e.g. rwitkamp"></label>`:''}
       <label class="f">New password (at least 8 characters)<input type="password" id="newPw" autocomplete="new-password"></label>
       <label class="f">Confirm password<input type="password" id="newPw2" autocomplete="new-password"></label>
       ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
-      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="setnewpassword">Save password</button>
+      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="setnewpassword">${isInvite?'Save and continue':'Save password'}</button>
     </section>`;
-  $('#newPw')?.focus();
+  $(isInvite?'#newUsername':'#newPw')?.focus();
 }
 async function doSetNewPassword(){
+  const isInvite=AUTH_HASH_TYPE==='invite';
+  const username=isInvite?($('#newUsername')?.value||'').trim():'';
   const p1=$('#newPw')?.value||'', p2=$('#newPw2')?.value||'';
+  if(isInvite && username.length<3){ renderSetPassword('Username must be at least 3 characters.'); return; }
+  if(isInvite && !/^[a-zA-Z0-9_.]+$/.test(username)){ renderSetPassword('Username can only contain letters, numbers, dots and underscores.'); return; }
   if(p1.length<8){ renderSetPassword('Password must be at least 8 characters.'); return; }
   if(p1!==p2){ renderSetPassword('Passwords do not match.'); return; }
   try{
     const {error}=await sb.auth.updateUser({password:p1});
     if(error){ renderSetPassword('Could not save password. Try again.'); return; }
   }catch(e){ renderSetPassword('Could not save password. Check your connection and try again.'); return; }
+  if(isInvite){
+    try{
+      const {error}=await sb.rpc('set_own_username',{new_username:username});
+      if(error){ renderSetPassword(error.code==='23505'?'That username is already taken — choose another.':'Could not save username. Try again.'); return; }
+    }catch(e){ renderSetPassword('Could not save username. Check your connection and try again.'); return; }
+  }
   try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
   toast('Password saved.');
   await bootUser();
@@ -2235,7 +2265,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.5.4';
+const APP_VERSION='2.6.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2653,6 +2683,11 @@ async function bootUser(){
   }
   if(sbUser && (AUTH_HASH_TYPE==='invite' || AUTH_HASH_TYPE==='recovery')){ view={name:'setpassword'}; render(); }
   else if(sbUser) await bootUser();
+  else if(AUTH_HASH_ERROR){
+    view={name:'login'};
+    renderLogin('That link has expired or was already used. Ask an admin to send a new invite, or tap "Forgot password?" again for a fresh reset link.');
+    try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
+  }
   else { view={name:'login'}; render(); }
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){
