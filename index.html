@@ -675,7 +675,9 @@ async function doSetNewPassword(){
   if(p1!==p2){ renderSetPassword('Passwords do not match.'); return; }
   try{
     const {error}=await sb.auth.updateUser({password:p1});
-    if(error){ renderSetPassword('Could not save password. Try again.'); return; }
+    // Show Supabase's actual message (e.g. a password-strength rule beyond just length) instead
+    // of a generic string -- hiding it meant neither of us could tell why this kept failing.
+    if(error){ renderSetPassword(`Could not save password: ${error.message}`); return; }
   }catch(e){ renderSetPassword('Could not save password. Check your connection and try again.'); return; }
   if(isInvite){
     try{
@@ -2278,7 +2280,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.6.1';
+const APP_VERSION='2.6.2';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
