@@ -1382,6 +1382,11 @@ function renderSettings(){
       <label class="f">WAQI token (free)<input type="password" data-set="waqiToken" value="${esc(S.waqiToken)}" autocomplete="off" placeholder="Paste your token here"></label>
       <p class="hint" style="margin-top:8px">Request a free token: go to <b>aqicn.org/data-platform/token/</b>, enter your email address, and you'll receive a token by email right away. No credit card or billing needed. Paste the token above.</p>`:''}
     </section>
+    <section class="panel"><h2>Help</h2>
+      <p class="hint">The handleiding covers getting started, logging in, filling in a survey, photos, reporting and FAQ.</p>
+      <a class="btn wide" style="margin-top:10px;display:block;text-align:center;text-decoration:none" href="handleiding.html" target="_blank" rel="noopener">Open handleiding</a>
+      <a class="btn wide" style="margin-top:10px;display:block;text-align:center;text-decoration:none" href="Pillow%20Report%20Handleiding.pdf" target="_blank" rel="noopener">Download as PDF</a>
+    </section>
     <section class="panel"><h2>Account</h2>
       <p class="hint">Logged in as <b>${esc(sbUser?.email||'')}</b>. Your surveys sync to the server automatically and stay private to your account.</p>
       <label class="f" style="margin-top:10px">Username <span class="hint">(optional — log in with this instead of typing your e-mail)</span><input id="usernameInp" value="${esc(sbUsername||'')}" autocomplete="username" autocapitalize="off" placeholder="e.g. rwitkamp"></label>
@@ -2312,7 +2317,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='3.4.0';
+const APP_VERSION='3.5.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);

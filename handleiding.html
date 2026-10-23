@@ -1,0 +1,282 @@
+<title>Pillow Report Handleiding</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@500;600;700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
+<style>
+:root{
+  --ink:#13233A; --muted:#5B6B80; --faint:#8C98A8;
+  --bg:#EDF1F5; --surface:#FFFFFF; --line:#D9E1EA; --soft:#E3EBF4;
+  --accent:#0EA5E9; --accent-ink:#0B2340; --klm:#00A1DE;
+  --good:#1F7A5C; --bad:#C2413B;
+  color-scheme: light;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --ink:#E7EDF5; --muted:#A9B6C6; --faint:#78889B;
+  --bg:#0E1621; --surface:#172231; --line:#2A3A4E; --soft:#1E2E42;
+  --accent:#38BDF8; --accent-ink:#06151F; --klm:#38BDF8;
+  --good:#4FB488; --bad:#E07367;
+  color-scheme: dark;
+}}
+:root[data-theme="dark"]{
+  --ink:#E7EDF5; --muted:#A9B6C6; --faint:#78889B;
+  --bg:#0E1621; --surface:#172231; --line:#2A3A4E; --soft:#1E2E42;
+  --accent:#38BDF8; --accent-ink:#06151F; --klm:#38BDF8;
+  --good:#4FB488; --bad:#E07367;
+  color-scheme: dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size:16px; line-height:1.55;
+  padding-inline:20px;
+}
+h1,h2,h3{font-family:"Lexend",system-ui,sans-serif; text-wrap:balance; margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+a{color:var(--accent)}
+
+.wrap{max-width:720px; margin:0 auto}
+
+/* ---- Hero: echoes the app's own navy top bar + brand mark ---- */
+.hero{
+  margin-top:28px; border-radius:20px; overflow:hidden;
+  background:linear-gradient(165deg, var(--ink) 0%, #0B1A2B 100%);
+  padding:40px 32px 34px; color:#fff; position:relative;
+}
+.hero-mark{width:56px; height:40px; display:block; margin-bottom:18px}
+.hero h1{font-size:2rem; font-weight:700; color:#fff; letter-spacing:-0.01em}
+.hero p{margin:10px 0 0; color:#B9C8DC; font-size:1.05rem; max-width:46ch}
+.hero .meta{margin-top:20px; display:flex; gap:10px; flex-wrap:wrap}
+.hero .chip{
+  font-family:"Lexend",sans-serif; font-size:.72rem; font-weight:600;
+  letter-spacing:.04em; text-transform:uppercase;
+  background:rgba(255,255,255,.1); color:#CFE0F2;
+  border:1px solid rgba(255,255,255,.18); border-radius:99px; padding:5px 12px;
+}
+
+/* ---- Quick nav, echoes the app's own section-chip bar ---- */
+.nav{
+  display:flex; gap:8px; overflow-x:auto; margin:22px 0 0; padding:4px 2px 14px;
+  scrollbar-width:none; position:sticky; top:env(safe-area-inset-top,0px); background:var(--bg); z-index:5;
+}
+.nav::-webkit-scrollbar{display:none}
+.nav a{
+  flex:none; font-family:"Lexend",sans-serif; font-size:.82rem; font-weight:600;
+  text-decoration:none; color:var(--muted); background:var(--surface);
+  border:1px solid var(--line); border-radius:99px; padding:8px 14px;
+  white-space:nowrap;
+}
+
+main{padding-bottom:60px}
+
+/* ---- Section panels, echoes the app's own .panel card ---- */
+section.panel{
+  background:var(--surface); border:1px solid var(--line); border-radius:16px;
+  padding:26px 28px; margin-top:16px; scroll-margin-top:70px;
+  break-inside:avoid; page-break-inside:avoid;
+}
+section.panel h2{
+  font-size:1.3rem; font-weight:700; display:flex; align-items:baseline; gap:10px;
+}
+section.panel h2 .no{
+  font-size:.8rem; color:var(--faint); font-weight:600; font-variant-numeric:tabular-nums;
+}
+section.panel p{margin:12px 0 0; color:var(--ink)}
+section.panel p.hint{color:var(--muted); font-size:.92rem}
+section.panel ol, section.panel ul{margin:12px 0 0; padding-left:22px}
+section.panel li{margin:6px 0}
+section.panel ol li::marker{font-family:"Lexend",sans-serif; font-weight:700; color:var(--accent)}
+
+.btn-label{
+  display:inline-block; font-family:"Lexend",sans-serif; font-weight:600; font-size:.85rem;
+  background:var(--soft); color:var(--ink); border:1px solid var(--line);
+  border-radius:8px; padding:2px 9px; white-space:nowrap;
+}
+
+.callout{
+  margin-top:16px; border-radius:12px; padding:14px 16px;
+  background:var(--soft); border:1px solid var(--line); font-size:.92rem; color:var(--muted);
+}
+.callout.warn{ border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); background: color-mix(in srgb, var(--bad) 8%, var(--soft)); }
+.callout b{color:var(--ink)}
+
+table.kv{width:100%; border-collapse:collapse; margin-top:14px; font-size:.92rem}
+table.kv td{padding:9px 0; border-top:1px solid var(--line); vertical-align:top}
+table.kv td:first-child{color:var(--muted); width:38%; padding-right:14px}
+table.kv tr:first-child td{border-top:0}
+
+.order-note{
+  font-family:"Lexend",sans-serif; font-size:.78rem; font-weight:600; letter-spacing:.03em;
+  text-transform:uppercase; color:var(--accent); margin:0 0 4px;
+}
+
+footer{
+  max-width:720px; margin:36px auto 0; padding-bottom:30px;
+  color:var(--faint); font-size:.85rem; text-align:center;
+}
+
+@media (max-width:480px){
+  .hero{padding:30px 22px 26px}
+  .hero h1{font-size:1.6rem}
+  section.panel{padding:20px 18px}
+}
+
+@media print{
+  * { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  body{padding-inline:0}
+  .nav{display:none}
+  .hero{break-after:avoid; page-break-after:avoid; border-radius:0}
+  section.panel h2{break-after:avoid; page-break-after:avoid}
+  table.kv, ul, ol{break-inside:avoid; page-break-inside:avoid}
+  a{color:var(--ink); text-decoration:none}
+}
+</style>
+
+<div class="wrap">
+  <div class="hero">
+    <svg class="hero-mark" viewBox="0 0 212 152" aria-hidden="true">
+      <rect x="0" y="0" width="212" height="152" rx="40" fill="#0EA5E9"/>
+      <rect x="14" y="14" width="184" height="124" rx="28" fill="none" stroke="#fff" stroke-width="6" stroke-dasharray="10 9"/>
+      <rect x="66" y="26" width="80" height="100" rx="22" fill="#fff"/>
+      <path d="M83 76 L101 94 L131 56" fill="none" stroke="#0EA5E9" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <h1>Pillow Report &mdash; handleiding</h1>
+    <p>Alles wat je nodig hebt om crew-hotel surveys in te vullen, te rapporteren en te delen. Werkt ook offline, en je surveys staan veilig op de server zodra je weer verbinding hebt.</p>
+    <div class="meta">
+      <span class="chip">Survey Checklist</span>
+      <span class="chip">iPhone, iPad &amp; laptop</span>
+      <span class="chip">Synct automatisch</span>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <a href="#starten">Starten</a>
+    <a href="#account">Account</a>
+    <a href="#trip">Trip</a>
+    <a href="#survey">Survey</a>
+    <a href="#fotos">Foto's</a>
+    <a href="#rapport">Rapport &amp; delen</a>
+    <a href="#summary">Summary</a>
+    <a href="#data">Je data</a>
+    <a href="#faq">Tips &amp; FAQ</a>
+  </nav>
+
+  <main>
+
+    <section class="panel" id="starten">
+      <h2><span class="no">01</span> Starten</h2>
+      <p>De app staat niet in de App Store &mdash; je opent 'm via een link. Op je telefoon of tablet zet je 'm op je beginscherm, net als een gewone app; op een laptop open je 'm gewoon als website.</p>
+      <ol>
+        <li>Open de link die je van Roland hebt gekregen, in Safari (geen andere browser) als je een iPhone of iPad gebruikt.</li>
+        <li>Tik op het deel-icoon onderin Safari, kies <span class="btn-label">Zet op beginscherm</span>.</li>
+        <li>Open de app vanaf het icoontje op je beginscherm &mdash; niet meer via Safari. Dat scheelt op den duur opslagruimte en laat de app betrouwbaarder offline werken.</li>
+      </ol>
+      <p class="hint">Op een laptop kun je de link gewoon in je browser openen en als bladwijzer bewaren &mdash; een beginscherm-icoontje is daar niet nodig.</p>
+    </section>
+
+    <section class="panel" id="account">
+      <h2><span class="no">02</span> Account aanmaken &amp; inloggen</h2>
+      <p>Er is geen gedeeld wachtwoord meer &mdash; iedereen heeft een eigen account, en inloggen gaat met een eenmalige code per e-mail in plaats van een wachtwoord.</p>
+      <ol>
+        <li>Vul op het inlogscherm je @klm.com e-mailadres in en tik op <span class="btn-label">Send code</span>.</li>
+        <li>Je krijgt binnen een paar minuten een 6-cijferige code op dat e-mailadres. Vul die in en tik op <span class="btn-label">Verify</span>.</li>
+        <li>De eerste keer land je daarna op <em>"Waiting for approval"</em> &mdash; Roland moet je account nog eenmalig goedkeuren. Je hoeft hier zelf niets voor te doen, dit gebeurt meestal snel.</li>
+      </ol>
+      <div class="callout">Alleen @klm.com-adressen kunnen een account aanmaken. Geen code ontvangen? Check je spamfolder, of tik op <span class="btn-label">Resend code</span>.</div>
+      <p class="hint">Via <span class="btn-label">Settings</span> &rarr; Account kun je een gebruikersnaam instellen, zodat je daarna niet elke keer je volledige e-mailadres hoeft te typen.</p>
+    </section>
+
+    <section class="panel" id="trip">
+      <h2><span class="no">03</span> Een trip starten</h2>
+      <p>Een <b>trip</b> is de reis zelf (bijv. Riyadh, drie dagen) en kan meerdere hotelsurveys bevatten. Tik op <span class="btn-label">+ New survey trip</span> op het beginscherm.</p>
+      <table class="kv">
+        <tr><td>City &amp; Airport code</td><td>Vul de stad in; de 3-letter luchthavencode (bijv. <code>RUH</code>) wordt automatisch opgezocht en ingevuld. Klopt die niet of wil je 'm aanpassen, dan kan dat altijd zelf &mdash; je eigen invoer wordt daarna niet meer overschreven.</td></tr>
+        <tr><td>Hodaco Rep &amp; NI Rep</td><td>Stel je naam hier eenmalig per trip in; dit wordt automatisch meegenomen in elke nieuwe survey die je binnen deze trip aanmaakt, en staat in de PDF-header.</td></tr>
+        <tr><td>Reason for survey</td><td>Kies uit de lijst (bijv. "New destination"); bij "Other" kun je zelf een reden intypen.</td></tr>
+      </table>
+      <p class="hint">Onderaan de trippagina staat een <span class="btn-label">Save trip</span>-knop. Alles wordt ook automatisch opgeslagen terwijl je typt &mdash; deze knop is puur een directe bevestiging, handig als je het zeker wil weten.</p>
+    </section>
+
+    <section class="panel" id="survey">
+      <h2><span class="no">04</span> Een survey toevoegen &amp; invullen</h2>
+      <p>Tik binnen een trip op <span class="btn-label">+ Add survey</span> voor elk hotel dat je bezoekt.</p>
+      <table class="kv">
+        <tr><td>Hotel zoeken</td><td>Typ de hotelnaam &mdash; er verschijnt automatisch een lijst met suggesties. Kies de juiste en het adres en de co&ouml;rdinaten worden meteen ingevuld.</td></tr>
+        <tr><td>City code</td><td>Wordt automatisch overgenomen uit de trip; hiermee berekent de app ook de rijtijd naar de luchthaven.</td></tr>
+        <tr><td>Rijtijd, luchtkwaliteit &amp; rating</td><td>Worden automatisch opgehaald zodra adres &eacute;n city code bekend zijn. Werkt het een keer niet, dan staat er een <span class="btn-label">Try again now</span>-knop onder dat veld.</td></tr>
+      </table>
+      <p>De checklist bestaat uit acht secties, in deze volgorde:</p>
+      <p class="order-note">General &middot; Facilities &middot; Location &middot; Rooms &middot; Room safety &middot; Security &middot; Noise &middot; CAO compliance</p>
+      <p>Tik bovenin op een sectie-naam om er direct naartoe te springen &mdash; die balk blijft zichtbaar terwijl je scrolt. Je voortgang staat bovenaan het scherm ("X of Y items filled in").</p>
+      <ul>
+        <li>Bij veel vragen staat een <span class="btn-label">Details</span>-knop met de exacte CAO-afspraak waarop het antwoord gebaseerd is.</li>
+        <li>Via <span class="btn-label">+ note</span> onder een antwoord kun je een toelichting typen, en zelf aangeven of iets <span class="btn-label">Compliant</span> of <span class="btn-label">Non-compliant</span> is.</li>
+        <li>Het eindoordeel (CAO compliant: Yes/No) wordt automatisch bepaald zodra er een afwijkende bevinding is, met een overzicht van alle bevindingen eronder &mdash; je kunt dit altijd handmatig overschrijven.</li>
+        <li>Bij "Other facilities" en soortgelijke vragen kun je, als het antwoord Yes is, ook optioneel de openingstijden aangeven (of "24/7"). Laat je dat leeg, dan telt dat niet mee als een niet-ingevuld veld.</li>
+      </ul>
+      <p class="hint">Niet elk veld is verplicht. Een paar vrije-tekstvelden (zoals "Other information") tellen niet mee in de voortgangsteller &mdash; die zijn puur voor extra context.</p>
+    </section>
+
+    <section class="panel" id="fotos">
+      <h2><span class="no">05</span> Foto's</h2>
+      <p>Via <span class="btn-label">Add photo</span> bovenaan de survey, of per sectie onderaan. Geef elke foto meteen een label (bijv. "Breakfast", "Room 512") zodat je later weet waar hij bij hoort.</p>
+      <div class="callout warn"><b>Belangrijk.</b> Maak foto's het liefst eerst met de gewone Camera-app van je telefoon, en voeg ze daarna toe aan de survey via <span class="btn-label">Add photo</span> &mdash; dat is betrouwbaarder dan rechtstreeks fotograferen vanuit de app zelf. Kies je toch voor rechtstreeks fotograferen in de app, zorg er dan voor dat de foto goed is opgeslagen: houd 'm ingedrukt en bevestig dat 'ie bewaard is voordat je verdergaat.</div>
+      <ul>
+        <li>Wil je dat foto's automatisch ook in je gewone Fotobibliotheek terechtkomen? Zet dat aan bij <span class="btn-label">Settings</span> &rarr; Foto's.</li>
+        <li>Je kunt ook op elk moment alle foto's van een survey in &eacute;&eacute;n keer bewaren via het foto-icoon in de bovenbalk.</li>
+      </ul>
+    </section>
+
+    <section class="panel" id="rapport">
+      <h2><span class="no">06</span> Rapport maken en delen</h2>
+      <p>Zodra de checklist 100% is ingevuld, verschijnt onderin de knop <span class="btn-label">Report &amp; share</span>.</p>
+      <table class="kv">
+        <tr><td>Aanbevolen route</td><td><span class="btn-label">1. Save PDF</span> opslaan, dan <span class="btn-label">2. Compose mail</span> &mdash; ontvangers en onderwerp staan al klaar, jij voegt alleen de zojuist opgeslagen PDF toe als bijlage.</td></tr>
+        <tr><td>Direct delen</td><td><span class="btn-label">Share with PDF</span> stuurt de PDF in &eacute;&eacute;n stap mee, maar dan plak je de ontvangers (al op je klembord) en het onderwerp zelf.</td></tr>
+        <tr><td>Bewerkbaar</td><td><span class="btn-label">Save Word document</span> voor een versie die je nog kunt aanpassen op een laptop.</td></tr>
+      </table>
+    </section>
+
+    <section class="panel" id="summary">
+      <h2><span class="no">07</span> Het Summary-document</h2>
+      <p>Via <span class="btn-label">Summary</span> op het beginscherm maak je &eacute;&eacute;n overzichtsdocument met korte plus- en minpunten per hotel &mdash; handig als je meerdere hotels in dezelfde stad hebt bezocht.</p>
+      <ul>
+        <li>Hotelnamen uit je surveys worden er automatisch aan toegevoegd.</li>
+        <li>Zet een hotelnaam gevolgd door een dubbele punt (<code>Hilton Riyadh:</code>) om een nieuw hotel te starten; regels die beginnen met <code>+</code> of <code>-</code> worden pluspunten en minpunten.</li>
+        <li>Voeg zelf een regel <code>Location:</code> toe en de app plaatst daaronder automatisch een kaartje met alle hotels en de luchthaven erop.</li>
+      </ul>
+      <p>Exporteren als PDF kan via het icoontje rechtsboven &mdash; elk hotel krijgt daarin zijn eigen pagina.</p>
+    </section>
+
+    <section class="panel" id="data">
+      <h2><span class="no">08</span> Je data &amp; synchronisatie</h2>
+      <p>Surveys worden automatisch bewaard op de server, gekoppeld aan jouw account &mdash; niet alleen lokaal op dit ene toestel. Log je op een ander toestel in met hetzelfde account, dan zie je dezelfde trips en surveys terug.</p>
+      <ul>
+        <li>Trips en surveys zijn priv&eacute; voor jouw eigen account; een collega ziet ze niet automatisch.</li>
+        <li>Wil je surveys van een collega inladen, of een eigen reservekopie bewaren? Gebruik <span class="btn-label">Settings</span> &rarr; <span class="btn-label">Export all (JSON)</span> en <span class="btn-label">Restore backup</span>.</li>
+      </ul>
+      <p class="hint">Ook zonder internet kun je gewoon verder werken &mdash; zodra je weer verbinding hebt, synchroniseert alles automatisch naar de server.</p>
+    </section>
+
+    <section class="panel" id="faq">
+      <h2><span class="no">09</span> Tips &amp; veelgestelde vragen</h2>
+      <table class="kv">
+        <tr><td>Ik zie een update niet</td><td>Sluit de app volledig af (via de app-switcher omhoog vegen) en open 'm daarna twee keer achter elkaar opnieuw.</td></tr>
+        <tr><td>Werkt dit zonder internet?</td><td>Het invullen van de checklist en het maken van PDF's werkt volledig offline. Inloggen (de code aanvragen/invullen) en synchroniseren met de server heb je wel internet voor nodig; de automatische opzoek-functies (adres, rijtijd, luchtkwaliteit, rating, kaartjes) ook.</td></tr>
+        <tr><td>Ik ben mijn toegang kwijt</td><td>Er is geen wachtwoord om te vergeten &mdash; vraag op het inlogscherm gewoon een nieuwe code aan met je e-mailadres.</td></tr>
+        <tr><td>Mijn account staat nog op "Waiting for approval"</td><td>Dat is normaal bij een nieuw account; Roland moet 'm eenmalig goedkeuren. Geef het gerust even aan.</td></tr>
+        <tr><td>Kan ik met meerdere toestellen werken?</td><td>Ja &mdash; log op elk toestel in met hetzelfde account en je ziet dezelfde trips en surveys, dankzij de automatische synchronisatie.</td></tr>
+        <tr><td>Kan ik samenwerken met een collega aan dezelfde trip?</td><td>Trips zijn op dit moment priv&eacute; per account. Wil je iets delen, gebruik dan <span class="btn-label">Export all (JSON)</span> en laat je collega dat inladen via <span class="btn-label">Restore backup</span>.</td></tr>
+        <tr><td>Survey per ongeluk aangeraakt?</td><td>Veeg een survey op het beginscherm naar links om 'm te verwijderen &mdash; de app vraagt altijd eerst om bevestiging.</td></tr>
+        <tr><td>Mijn foto is niet opgeslagen</td><td>Maak foto's liever eerst met de gewone Camera-app en voeg ze daarna toe via <span class="btn-label">Add photo</span> &mdash; zie de sectie Foto's hierboven.</td></tr>
+      </table>
+    </section>
+
+  </main>
+</div>
+<footer>Pillow Report &middot; interne handleiding voor Hodaco-inspecteurs</footer>

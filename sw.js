@@ -1,7 +1,8 @@
 // Verhoog dit versienummer bij elke update, anders blijven apparaten de oude versie gebruiken.
-const CACHE = 'hotel-survey-v3.4.0';
+const CACHE = 'hotel-survey-v3.5.0';
 const ASSETS = [
   './', './index.html', './manifest.webmanifest', './jspdf.umd.min.js', './supabase.min.js',
+  './handleiding.html',
   './fonts/atkinson-hyperlegible-latin-400-normal.woff2',
   './fonts/atkinson-hyperlegible-latin-700-normal.woff2',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'
