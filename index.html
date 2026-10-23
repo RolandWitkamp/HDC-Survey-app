@@ -391,10 +391,12 @@ const AUTH_HASH_ERROR = (()=>{ const m=location.hash.match(/error_description=([
 // request, so a scanner fetching this page's URL never sees it at all, only JavaScript running in
 // an actual browser can read it. It's then only used after an explicit tap (renderConfirmLink),
 // never automatically on page load, so even a scanner that does run JavaScript can't trigger it.
-// The real URL (embedded raw by the Supabase email template, see supabase_schema.sql) has its
-// own "&"-separated params, so this takes everything after "confirm=" rather than stopping at the
-// first "&" the way the other hash parsers above do -- it's always the last thing in the fragment.
-const AUTH_CONFIRM_URL = (()=>{ const m=location.hash.match(/^#confirm=(.+)$/); return m?m[1]:null; })();
+// Supabase's template engine percent-encodes {{ .ConfirmationURL }} when it lands in this
+// fragment position (its own "://" and "&"-separated params come through as %3a%2f%2f / %26,
+// not literally) -- decodeURIComponent undoes that. Takes everything after "confirm=" rather
+// than stopping at the first "&" the way the other hash parsers above do, since -- decoded or
+// not -- it's always the last thing in the fragment.
+const AUTH_CONFIRM_URL = (()=>{ const m=location.hash.match(/^#confirm=(.+)$/); if(!m) return null; try{ return decodeURIComponent(m[1]); }catch(e){ return m[1]; } })();
 const sb = window.supabase ? window.supabase.createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY) : null;
 let sbUser = null;
 let sbIsAdmin = false;
@@ -2305,7 +2307,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.8.0';
+const APP_VERSION='2.8.1';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
