@@ -1537,6 +1537,7 @@ function renderTrip(){
       <h2>Trip details</h2>
       <label class="f">City / airport code (shown in the PDF header)<input id="summaryCity" value="${esc(trip.city)}" placeholder="e.g. Riyadh, RUH"></label>
       <label class="f">Inspector(s) (shown in the PDF header)<input id="summaryInspectors" value="${esc(trip.inspectors)}" placeholder="e.g. Witkamp & Snijders"></label>
+      <label class="f">Hodaco Rep <span class="hint">(auto-filled into each survey in this trip)</span><input id="tripHodacoRep" value="${esc(trip.reps!==undefined?trip.reps:S.defaultRep)}"></label>
       <label class="f">NI Rep <span class="hint">(auto-filled into each survey in this trip)</span><select class="inp" id="tripNiRep">
         <option value=""${!trip.inspector?' selected':''}>— Select —</option>
         ${NI_REPS.map(n=>`<option value="${esc(n)}"${trip.inspector===n?' selected':''}>${esc(n)}</option>`).join('')}
@@ -1662,12 +1663,12 @@ document.addEventListener('click', async e=>{
   else if(a==='exportclassicpdf'){ hideModal(); exportClassicPdf(); }
   else if(a==='exportclassicword'){ hideModal(); exportClassicWord(); }
   else if(a==='new'){
-    const t={id:uid(),city:'',inspectors:'',flights:'',reason:'',summary:'',updated:Date.now(),deleted:false};
+    const t={id:uid(),city:'',inspectors:'',reps:S.defaultRep,flights:'',reason:'',summary:'',updated:Date.now(),deleted:false};
     S.trips.push(t); persist(); view={name:'trip',id:t.id}; render();
   }
   else if(a==='newsurvey'){
     const trip=curTrip(); if(!trip) return;
-    const n={id:uid(),hotel:'',address:'',city:extractCityCode(trip.city),reps:S.defaultRep,date:today(),inspector:trip.inspector||'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''},tripId:trip.id};
+    const n={id:uid(),hotel:'',address:'',city:extractCityCode(trip.city),reps:(trip.reps!==undefined?trip.reps:S.defaultRep)||S.defaultRep,date:today(),inspector:trip.inspector||'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''},tripId:trip.id};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
   }
   else if(a==='opentrip'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'trip',id:b.dataset.id}; render(); }
@@ -1776,6 +1777,7 @@ document.addEventListener('input', e=>{
   if(el.id==='summaryCity'){ const t=curTrip(); if(t){ t.city=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='summaryInspectors'){ const t=curTrip(); if(t){ t.inspectors=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='tripNiRep'){ const t=curTrip(); if(t){ t.inspector=el.value; t.updated=Date.now(); persist(); } return; }
+  if(el.id==='tripHodacoRep'){ const t=curTrip(); if(t){ t.reps=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='summaryFlights'){ const t=curTrip(); if(t){ t.flights=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='summaryReasonSelect'){ const t=curTrip(); if(t){
     if(el.value==='other'){ t.reasonOther=true; }
@@ -2272,7 +2274,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='3.1.1';
+const APP_VERSION='3.1.2';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
