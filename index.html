@@ -674,7 +674,7 @@ function renderHome(){
       <button class="survey-row" data-a="opentrip" data-id="${t.id}">
         <span class="stamp" data-s="0">${n}</span>
         <span class="t"><b>${esc(t.city||'Untitled trip')}</b>
-          <span>${n} survey${n===1?'':'s'}${t.inspectors?' · '+esc(t.inspectors):''}</span></span>
+          <span>${n} survey${n===1?'':'s'}${surveyedBy(t)?' · '+esc(surveyedBy(t)):''}</span></span>
       </button>
     </div>`}).join('') : `
     <div class="empty"><h2>No survey trips yet</h2>
@@ -1536,9 +1536,8 @@ function renderTrip(){
     <section class="panel">
       <h2>Trip details</h2>
       <label class="f">City / airport code (shown in the PDF header)<input id="summaryCity" value="${esc(trip.city)}" placeholder="e.g. Riyadh, RUH"></label>
-      <label class="f">Inspector(s) (shown in the PDF header)<input id="summaryInspectors" value="${esc(trip.inspectors)}" placeholder="e.g. Witkamp & Snijders"></label>
-      <label class="f">Hodaco Rep <span class="hint">(auto-filled into each survey in this trip)</span><input id="tripHodacoRep" value="${esc(trip.reps!==undefined?trip.reps:S.defaultRep)}"></label>
-      <label class="f">NI Rep <span class="hint">(auto-filled into each survey in this trip)</span><select class="inp" id="tripNiRep">
+      <label class="f">Hodaco Rep <span class="hint">(auto-filled into each survey in this trip, shown in the PDF header)</span><input id="tripHodacoRep" value="${esc(trip.reps!==undefined?trip.reps:S.defaultRep)}"></label>
+      <label class="f">NI Rep <span class="hint">(auto-filled into each survey in this trip, shown in the PDF header)</span><select class="inp" id="tripNiRep">
         <option value=""${!trip.inspector?' selected':''}>— Select —</option>
         ${NI_REPS.map(n=>`<option value="${esc(n)}"${trip.inspector===n?' selected':''}>${esc(n)}</option>`).join('')}
         ${trip.inspector && !NI_REPS.includes(trip.inspector)?`<option value="${esc(trip.inspector)}" selected>${esc(trip.inspector)}</option>`:''}
@@ -1775,7 +1774,6 @@ document.addEventListener('input', e=>{
   const el=e.target, s=cur(), d=el.dataset;
   if(el.id==='summaryText'){ const t=curTrip(); if(t){ t.summary=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='summaryCity'){ const t=curTrip(); if(t){ t.city=el.value; t.updated=Date.now(); persist(); } return; }
-  if(el.id==='summaryInspectors'){ const t=curTrip(); if(t){ t.inspectors=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='tripNiRep'){ const t=curTrip(); if(t){ t.inspector=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='tripHodacoRep'){ const t=curTrip(); if(t){ t.reps=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='summaryFlights'){ const t=curTrip(); if(t){ t.flights=el.value; t.updated=Date.now(); persist(); } return; }
@@ -2068,7 +2066,7 @@ function makeSummaryPdf(trip,mapDataUrl){
   const HEAD_SIZE=14, POINT_SIZE=10.5, PARA_SIZE=10, LINE_H=5, PARA_LINE_H=4.6;
   const blocks=parseSummaryBlocks(trip);
 
-  const headerSub=[trip.city,dateNL(today()),trip.inspectors?'Surveyed by '+trip.inspectors:''].filter(Boolean).join('   |   ');
+  const headerSub=[trip.city,dateNL(today()),surveyedBy(trip)?'Surveyed by '+surveyedBy(trip):''].filter(Boolean).join('   |   ');
   doc.setFillColor(...KLMBLUE); doc.rect(0,0,W,36,'F');
   setF(9,'bold',[170,190,215]); doc.text('PILLOW REPORT',M,12);
   setF(18,'bold',[255,255,255]); doc.text(trip.city?`Hotel Summary — ${trip.city}`:'Hotel Summary',M,24);
@@ -2274,7 +2272,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='3.1.2';
+const APP_VERSION='3.2.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2345,7 +2343,7 @@ async function saveWord(s){
 }
 function makeSummaryRtf(trip){
   const blocks=parseSummaryBlocks(trip);
-  const headerSub=[trip.city,dateNL(today()),trip.inspectors?'Surveyed by '+trip.inspectors:''].filter(Boolean).join('   |   ');
+  const headerSub=[trip.city,dateNL(today()),surveyedBy(trip)?'Surveyed by '+surveyedBy(trip):''].filter(Boolean).join('   |   ');
   let body='';
   body+=`{\\pard\\sa80\\fs32\\b\\cf1 Hotel Summary${trip.city?' \\u8212? '+rtfEsc(trip.city):''}\\par}\n`;
   body+=`{\\pard\\sa240\\fs20 ${rtfEsc(headerSub)}\\par}\n`;
