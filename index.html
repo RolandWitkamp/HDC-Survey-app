@@ -705,11 +705,6 @@ function renderEdit(){
       <label class="f">Date</label>
       <div class="grid3">${dateSelectHTML(s)}</div>
       <label class="f">Hodaco Rep<input data-top="reps" value="${esc(s.reps)}"></label>
-      <label class="f">NI Rep<select class="inp" data-top="inspector">
-        <option value=""${!s.inspector?' selected':''}>— Select —</option>
-        ${NI_REPS.map(n=>`<option value="${esc(n)}"${s.inspector===n?' selected':''}>${esc(n)}</option>`).join('')}
-        ${s.inspector && !NI_REPS.includes(s.inspector)?`<option value="${esc(s.inspector)}" selected>${esc(s.inspector)}</option>`:''}
-      </select></label>
     </section>
     <section class="panel">
       <h2>Photos</h2>
@@ -1542,6 +1537,11 @@ function renderTrip(){
       <h2>Trip details</h2>
       <label class="f">City / airport code (shown in the PDF header)<input id="summaryCity" value="${esc(trip.city)}" placeholder="e.g. Riyadh, RUH"></label>
       <label class="f">Inspector(s) (shown in the PDF header)<input id="summaryInspectors" value="${esc(trip.inspectors)}" placeholder="e.g. Witkamp & Snijders"></label>
+      <label class="f">NI Rep <span class="hint">(auto-filled into each survey in this trip)</span><select class="inp" id="tripNiRep">
+        <option value=""${!trip.inspector?' selected':''}>— Select —</option>
+        ${NI_REPS.map(n=>`<option value="${esc(n)}"${trip.inspector===n?' selected':''}>${esc(n)}</option>`).join('')}
+        ${trip.inspector && !NI_REPS.includes(trip.inspector)?`<option value="${esc(trip.inspector)}" selected>${esc(trip.inspector)}</option>`:''}
+      </select></label>
       <label class="f">Flight schedule (outbound &amp; return)<textarea class="inp" id="summaryFlights" rows="4" placeholder="${esc('KL123  06-10-2026  AMS-RUH  10:20-18:05\nKL456  10-10-2026  RUH-AMS  20:10-01:45')}">${esc(trip.flights)}</textarea></label>
       <label class="f">Reason for survey<select class="inp" id="summaryReasonSelect">
         <option value=""${!trip.reason?' selected':''}>— Select —</option>
@@ -1667,7 +1667,7 @@ document.addEventListener('click', async e=>{
   }
   else if(a==='newsurvey'){
     const trip=curTrip(); if(!trip) return;
-    const n={id:uid(),hotel:'',address:'',city:extractCityCode(trip.city),reps:S.defaultRep,date:today(),inspector:'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''},tripId:trip.id};
+    const n={id:uid(),hotel:'',address:'',city:extractCityCode(trip.city),reps:S.defaultRep,date:today(),inspector:trip.inspector||'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''},tripId:trip.id};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
   }
   else if(a==='opentrip'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'trip',id:b.dataset.id}; render(); }
@@ -1775,6 +1775,7 @@ document.addEventListener('input', e=>{
   if(el.id==='summaryText'){ const t=curTrip(); if(t){ t.summary=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='summaryCity'){ const t=curTrip(); if(t){ t.city=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='summaryInspectors'){ const t=curTrip(); if(t){ t.inspectors=el.value; t.updated=Date.now(); persist(); } return; }
+  if(el.id==='tripNiRep'){ const t=curTrip(); if(t){ t.inspector=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='summaryFlights'){ const t=curTrip(); if(t){ t.flights=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='summaryReasonSelect'){ const t=curTrip(); if(t){
     if(el.value==='other'){ t.reasonOther=true; }
@@ -2271,7 +2272,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='3.1.0';
+const APP_VERSION='3.1.1';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
