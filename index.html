@@ -375,31 +375,11 @@ const DEFAULT_WAQI_TOKEN = '450eb63d4c903214e7f4c1a644315150a7ff2b25';
 /* SHA-256 hash of the shared lock-screen password, not the password itself. A device can clear/override this via the hidden Settings lock-screen section. */
 const DEFAULT_SUPABASE_URL = 'https://kahmxgxbixryukjoirod.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_qYb6uO8K0HFi-Gfdirx8AA_0jX3duoo';
-// Captured before Supabase's client has a chance to process/clear the URL, so an invite or
-// password-reset link's flow type survives even though both just land the user in a session.
-const AUTH_HASH_TYPE = (()=>{ const m=location.hash.match(/type=([^&]+)/); return m?m[1]:null; })();
-// An expired or already-used invite/recovery link redirects here with #error=...&error_code=
-// otp_expired&error_description=... instead of a token -- previously this fell straight through
-// to a plain, unexplained login screen with no sign anything had gone wrong with the link itself.
-const AUTH_HASH_ERROR = (()=>{ const m=location.hash.match(/error_description=([^&]+)/); return m?decodeURIComponent(m[1].replace(/\+/g,' ')):null; })();
-// Invite/recovery links kept showing up already-expired even on a fresh click in a clean browser
-// -- email security scanners (corporate gateways, Apple Mail's own link-safety check) silently
-// visit links in e-mails to scan them before the real person ever taps one, and since Supabase's
-// confirmation link is a single-use token, that automated visit burns it. The real confirmation
-// URL travels inside the URL *fragment* instead of as the visible link itself (set up via the
-// Supabase email template, see supabase_schema.sql) -- fragments are never sent in an HTTP
-// request, so a scanner fetching this page's URL never sees it at all, only JavaScript running in
-// an actual browser can read it. It's then only used after an explicit tap (renderConfirmLink),
-// never automatically on page load, so even a scanner that does run JavaScript can't trigger it.
-// Supabase's template engine percent-encodes {{ .ConfirmationURL }} when it lands in this
-// fragment position (its own "://" and "&"-separated params come through as %3a%2f%2f / %26,
-// not literally) -- decodeURIComponent undoes that. Takes everything after "confirm=" rather
-// than stopping at the first "&" the way the other hash parsers above do, since -- decoded or
-// not -- it's always the last thing in the fragment.
-const AUTH_CONFIRM_URL = (()=>{ const m=location.hash.match(/^#confirm=(.+)$/); if(!m) return null; try{ return decodeURIComponent(m[1]); }catch(e){ return m[1]; } })();
 const sb = window.supabase ? window.supabase.createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY) : null;
 let sbUser = null;
 let sbIsAdmin = false;
+let sbUsername = null;
+let pendingLoginEmail = '';
 let pendingCount = 0;
 let lastPushed = {surveys:{}, groups:{}, trips:{}};
 let pendingDeletes = {surveys:[], groups:[], trips:[]};
@@ -524,36 +504,29 @@ function editDockHTML(s){
     <label class="btn dock-photo-btn" aria-label="Add photo">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
 }
 function render(){ window.scrollTo(0,0);
-  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin,forgotpassword:renderForgotPassword,setpassword:renderSetPassword,requestaccess:renderRequestAccess,approvals:renderApprovals,pending:renderPendingApproval,confirmlink:renderConfirmLink})[view.name](); }
+  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin,verifycode:renderVerifyCode,approvals:renderApprovals,pending:renderPendingApproval})[view.name](); }
 
-function renderConfirmLink(){
-  $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
-  setDock('');
-  $('#app').innerHTML = `
-    <section class="panel" style="margin-top:40px">
-      <h2>Confirm it's you</h2>
-      <p class="hint">Tap below to continue. This extra step stops automated e-mail security scanners from using up your link before you get the chance to.</p>
-      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="confirmlinkgo">Continue</button>
-    </section>`;
-}
-
+// Password-based login (and its invite/reset-link machinery) is gone: it kept landing people on
+// an already-expired link, mainly because automated e-mail security scanners silently visit
+// links in e-mails before the real person taps one, which burns a single-use token. A one-time
+// code typed in by hand can't be "used up" by a scanner the same way -- nothing to click, nothing
+// for an automated visit to consume. This same screen now also doubles as "request access": the
+// first time someone verifies a code for a new @klm.com address, Supabase creates the account
+// (handle_new_user, unchanged) and they land in the normal pending-approval screen.
 function renderLogin(msg){
   $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
   setDock('');
   $('#app').innerHTML = `
     <section class="panel" style="margin-top:40px">
       <h2>Log in</h2>
-      <p class="hint">${sb?'Log in with your Pillow Report account.':'Login is unavailable: the Supabase library did not load. Check your connection and reopen the app.'}</p>
+      <p class="hint">${sb?'Enter your username or @klm.com e-mail and we\'ll send you a one-time code.':'Login is unavailable: the Supabase library did not load. Check your connection and reopen the app.'}</p>
       <label class="f">Username or e-mail<input type="text" id="loginEmail" autocomplete="username" autocapitalize="off"></label>
-      <label class="f">Password<input type="password" id="loginPassword" autocomplete="current-password"></label>
       ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
-      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="login" ${sb?'':'disabled'}>Log in</button>
-      <button type="button" class="link" style="margin-top:12px;display:block;text-align:center;width:100%" data-a="forgotpassword" ${sb?'':'disabled'}>Forgot password?</button>
-      <button type="button" class="link" style="margin-top:4px;display:block;text-align:center;width:100%" data-a="requestaccess" ${sb?'':'disabled'}>Request access with your @klm.com e-mail</button>
+      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="sendcode" ${sb?'':'disabled'}>Send code</button>
     </section>`;
-  const pw=$('#loginPassword');
-  pw?.addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
-  $('#loginEmail')?.focus();
+  const inp=$('#loginEmail');
+  inp?.addEventListener('keydown', e=>{ if(e.key==='Enter') doSendCode(); });
+  inp?.focus();
 }
 // Resolves whatever was typed in the username/e-mail field to a real e-mail for Supabase auth
 // calls, which only ever accept an e-mail -- a plain "@" check is enough since a username can
@@ -563,67 +536,61 @@ async function resolveLoginEmail(input){
   try{ const {data}=await sb.rpc('username_to_email',{uname:input}); return data||null; }
   catch(e){ return null; }
 }
-async function doLogin(){
-  const input=$('#loginEmail')?.value.trim()||'', password=$('#loginPassword')?.value||'';
-  if(!input || !password){ renderLogin('Enter your username/e-mail and password.'); return; }
+async function doSendCode(){
+  const input=$('#loginEmail')?.value.trim()||'';
+  if(!input){ renderLogin('Enter your username or e-mail.'); return; }
   try{
     const email=await resolveLoginEmail(input);
-    if(!email){ renderLogin('Incorrect username/e-mail or password.'); return; }
-    const {data,error}=await sb.auth.signInWithPassword({email,password});
-    if(error || !data?.user){ renderLogin('Incorrect username/e-mail or password.'); return; }
-    sbUser=data.user; await bootUser();
-  }catch(e){ renderLogin('Could not log in. Check your connection and try again.'); }
+    if(!email){ renderLogin('No account found for that username. Try your @klm.com e-mail instead.'); return; }
+    const {error}=await sb.auth.signInWithOtp({email, options:{shouldCreateUser:true}});
+    if(error){ renderLogin('Could not send a code. Only @klm.com e-mail addresses can request access.'); return; }
+    pendingLoginEmail=email;
+    view={name:'verifycode'}; render();
+  }catch(e){ renderLogin('Could not send a code. Check your connection and try again.'); }
 }
-function renderForgotPassword(msg){
+function renderVerifyCode(msg){
   $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
   setDock('');
   $('#app').innerHTML = `
     <section class="panel" style="margin-top:40px">
-      <h2>Reset your password</h2>
-      <p class="hint">Enter your e-mail and we'll send you a reset link.</p>
-      <label class="f">E-mail<input type="email" id="fpEmail" autocomplete="username" autocapitalize="off"></label>
+      <h2>Enter your code</h2>
+      <p class="hint">We sent a 6-digit code to <b>${esc(pendingLoginEmail)}</b>.</p>
+      <label class="f">Code<input type="text" inputmode="numeric" autocomplete="one-time-code" id="otpCode" placeholder="123456" maxlength="6"></label>
       ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
-      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="sendresetlink">Send reset link</button>
-      <button type="button" class="link" style="margin-top:12px;display:block;text-align:center;width:100%" data-a="backtologin">Back to log in</button>
+      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="verifycode">Verify</button>
+      <button type="button" class="link" style="margin-top:12px;display:block;text-align:center;width:100%" data-a="resendcode">Resend code</button>
+      <button type="button" class="link" style="margin-top:4px;display:block;text-align:center;width:100%" data-a="backtologin">Use a different e-mail</button>
     </section>`;
-  const inp=$('#fpEmail');
-  inp?.addEventListener('keydown', e=>{ if(e.key==='Enter') doSendResetLink(); });
+  const inp=$('#otpCode');
+  inp?.addEventListener('keydown', e=>{ if(e.key==='Enter') doVerifyCode(); });
   inp?.focus();
 }
-async function doSendResetLink(){
-  const email=$('#fpEmail')?.value.trim()||'';
-  if(!email){ renderForgotPassword('Enter your e-mail address.'); return; }
+async function doVerifyCode(){
+  const code=$('#otpCode')?.value.trim()||'';
+  if(!code){ renderVerifyCode('Enter the code from your e-mail.'); return; }
   try{
-    const {error}=await sb.auth.resetPasswordForEmail(email, {redirectTo: location.origin+location.pathname});
-    renderForgotPassword(error ? 'Could not send a reset e-mail. Check your connection and try again.' : 'Reset link sent — check your e-mail.');
-  }catch(e){ renderForgotPassword('Could not send a reset e-mail. Check your connection and try again.'); }
+    const {data,error}=await sb.auth.verifyOtp({email:pendingLoginEmail, token:code, type:'email'});
+    if(error || !data?.user){ renderVerifyCode('Incorrect or expired code. Try again or resend.'); return; }
+    sbUser=data.user; await bootUser();
+  }catch(e){ renderVerifyCode('Could not verify. Check your connection and try again.'); }
 }
-function renderRequestAccess(msg){
-  $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
-  setDock('');
-  $('#app').innerHTML = `
-    <section class="panel" style="margin-top:40px">
-      <h2>Request access</h2>
-      <p class="hint">Only @klm.com e-mail addresses can request access. A manager still has to approve your request before you can log in.</p>
-      <label class="f">@klm.com e-mail<input type="email" id="reqEmail" autocomplete="username" autocapitalize="off" placeholder="name@klm.com"></label>
-      <label class="f">Choose a password<input type="password" id="reqPassword" autocomplete="new-password"></label>
-      ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
-      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="requestaccesssubmit">Request access</button>
-      <button type="button" class="link" style="margin-top:12px;display:block;text-align:center;width:100%" data-a="backtologin">Back to log in</button>
-    </section>`;
-  $('#reqEmail')?.focus();
-}
-async function doRequestAccessSubmit(){
-  const email=$('#reqEmail')?.value.trim()||'', password=$('#reqPassword')?.value||'';
-  if(!email || !password){ renderRequestAccess('Enter your @klm.com e-mail and a password.'); return; }
-  if(password.length<8){ renderRequestAccess('Password must be at least 8 characters.'); return; }
+async function doResendCode(){
   try{
-    const {error}=await sb.auth.signUp({email,password});
-    if(error){ renderRequestAccess('Could not create an account. Only @klm.com e-mail addresses can request access, and each address can only be used once.'); return; }
-    renderLogin('Check your @klm.com inbox to confirm your address. After that, your request still needs approval before you can log in.');
-  }catch(e){ renderRequestAccess('Could not send the request. Check your connection and try again.'); }
+    const {error}=await sb.auth.signInWithOtp({email:pendingLoginEmail, options:{shouldCreateUser:true}});
+    renderVerifyCode(error ? 'Could not resend the code. Try again shortly.' : 'New code sent — check your e-mail.');
+  }catch(e){ renderVerifyCode('Could not resend the code. Try again shortly.'); }
 }
 let pendingStatus='waiting';
+let usernameMsg=null;
+async function doSaveUsername(){
+  const v=($('#usernameInp')?.value||'').trim();
+  if(!v){ usernameMsg='Enter a username.'; render(); return; }
+  try{
+    const {error}=await sb.rpc('set_own_username',{new_username:v});
+    if(error){ usernameMsg=error.code==='23505'?'That username is already taken — choose another.':error.message; render(); return; }
+    sbUsername=v; usernameMsg='Saved.'; render();
+  }catch(e){ usernameMsg='Could not save. Check your connection and try again.'; render(); }
+}
 function renderPendingApproval(){
   $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
   setDock('');
@@ -675,50 +642,10 @@ async function declineUser(uid){
   try{ await sb.from('profiles').update({rejected:true}).eq('id',uid); }catch(e){}
   loadPendingApprovals();
 }
-function renderSetPassword(msg){
-  const isInvite=AUTH_HASH_TYPE==='invite';
-  $('#bar').innerHTML=`<span class="brand">${ICON.mark}<h1>Pillow Report</h1></span>`;
-  setDock('');
-  $('#app').innerHTML = `
-    <section class="panel" style="margin-top:40px">
-      <h2>${isInvite?'Welcome — set up your account':'Set a new password'}</h2>
-      <p class="hint">${isInvite?'Choose a username and password':'Choose a password'} for your Pillow Report account${sbUser?.email?' ('+esc(sbUser.email)+')':''}.</p>
-      ${isInvite?`<label class="f">Username<input id="newUsername" autocomplete="username" autocapitalize="off" placeholder="e.g. rwitkamp"></label>`:''}
-      <label class="f">New password (at least 8 characters)<input type="password" id="newPw" autocomplete="new-password"></label>
-      <label class="f">Confirm password<input type="password" id="newPw2" autocomplete="new-password"></label>
-      ${msg?`<p class="hint" style="color:var(--s1);margin-top:8px">${esc(msg)}</p>`:''}
-      <button type="button" class="btn primary wide" style="margin-top:14px" data-a="setnewpassword">${isInvite?'Save and continue':'Save password'}</button>
-    </section>`;
-  $(isInvite?'#newUsername':'#newPw')?.focus();
-}
-async function doSetNewPassword(){
-  const isInvite=AUTH_HASH_TYPE==='invite';
-  const username=isInvite?($('#newUsername')?.value||'').trim():'';
-  const p1=$('#newPw')?.value||'', p2=$('#newPw2')?.value||'';
-  if(isInvite && username.length<3){ renderSetPassword('Username must be at least 3 characters.'); return; }
-  if(isInvite && !/^[a-zA-Z0-9_.]+$/.test(username)){ renderSetPassword('Username can only contain letters, numbers, dots and underscores.'); return; }
-  if(p1.length<8){ renderSetPassword('Password must be at least 8 characters.'); return; }
-  if(p1!==p2){ renderSetPassword('Passwords do not match.'); return; }
-  try{
-    const {error}=await sb.auth.updateUser({password:p1});
-    // Show Supabase's actual message (e.g. a password-strength rule beyond just length) instead
-    // of a generic string -- hiding it meant neither of us could tell why this kept failing.
-    if(error){ renderSetPassword(`Could not save password: ${error.message}`); return; }
-  }catch(e){ renderSetPassword('Could not save password. Check your connection and try again.'); return; }
-  if(isInvite){
-    try{
-      const {error}=await sb.rpc('set_own_username',{new_username:username});
-      if(error){ renderSetPassword(error.code==='23505'?'That username is already taken — choose another.':'Could not save username. Try again.'); return; }
-    }catch(e){ renderSetPassword('Could not save username. Check your connection and try again.'); return; }
-  }
-  try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
-  toast('Password saved.');
-  await bootUser();
-}
 async function doLogout(){
   if(!confirm('Log out? Surveys already synced stay on the server; anything not yet synced on this device could be lost.')) return;
   try{ await sb.auth.signOut(); }catch(e){}
-  sbUser=null; sbIsAdmin=false; S.surveys=[]; S.groups=[]; S.trips=[]; view={name:'login'}; render();
+  sbUser=null; sbIsAdmin=false; sbUsername=null; S.surveys=[]; S.groups=[]; S.trips=[]; view={name:'login'}; render();
 }
 
 function renderHome(){
@@ -1430,6 +1357,9 @@ function renderSettings(){
     </section>
     <section class="panel"><h2>Account</h2>
       <p class="hint">Logged in as <b>${esc(sbUser?.email||'')}</b>. Your surveys sync to the server automatically and stay private to your account.</p>
+      <label class="f" style="margin-top:10px">Username <span class="hint">(optional — log in with this instead of typing your e-mail)</span><input id="usernameInp" value="${esc(sbUsername||'')}" autocomplete="username" autocapitalize="off" placeholder="e.g. rwitkamp"></label>
+      ${usernameMsg?`<p class="hint" style="color:var(--s1);margin-top:4px">${esc(usernameMsg)}</p>`:''}
+      <button type="button" class="btn wide" style="margin-top:8px" data-a="saveusername">Save username</button>
       ${sbIsAdmin?'<button type="button" class="btn wide" style="margin-top:10px" data-a="approvals">Pending account requests</button>':''}
       <button type="button" class="btn wide danger" style="margin-top:10px" data-a="logout">Log out</button>
     </section>
@@ -1672,16 +1602,13 @@ document.addEventListener('click', async e=>{
   if(suppressClick) return;
   const b=e.target.closest('[data-a]'); if(!b) return;
   const a=b.dataset.a, s=cur();
-  if(a==='login'){ doLogin(); }
+  if(a==='sendcode'){ doSendCode(); }
   else if(a==='logout'){ doLogout(); }
-  else if(a==='forgotpassword'){ view={name:'forgotpassword'}; render(); }
-  else if(a==='confirmlinkgo'){ if(AUTH_CONFIRM_URL) location.href=AUTH_CONFIRM_URL; }
-  else if(a==='sendresetlink'){ doSendResetLink(); }
-  else if(a==='setnewpassword'){ doSetNewPassword(); }
-  else if(a==='requestaccess'){ view={name:'requestaccess'}; render(); }
-  else if(a==='requestaccesssubmit'){ doRequestAccessSubmit(); }
+  else if(a==='verifycode'){ doVerifyCode(); }
+  else if(a==='resendcode'){ doResendCode(); }
   else if(a==='backtologin'){ view={name:'login'}; render(); }
   else if(a==='approvals'){ view={name:'approvals'}; render(); }
+  else if(a==='saveusername'){ doSaveUsername(); }
   else if(a==='approveuser'){ approveUser(b.dataset.uid); }
   else if(a==='declineuser'){ declineUser(b.dataset.uid); }
   else if(a==='home'){view={name:'home'};render();}
@@ -2307,7 +2234,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='2.8.1';
+const APP_VERSION='3.0.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2705,9 +2632,10 @@ async function bootUser(){
   await loadLocalData();
   if(sb && sbUser && navigator.onLine){
     try{
-      const {data:profile}=await sb.from('profiles').select('approved,rejected,is_admin').eq('id',sbUser.id).single();
+      const {data:profile}=await sb.from('profiles').select('approved,rejected,is_admin,username').eq('id',sbUser.id).single();
       if(profile){
         sbIsAdmin=!!profile.is_admin;
+        sbUsername=profile.username||null;
         if(profile.rejected){ pendingStatus='rejected'; view={name:'pending'}; render(); return; }
         if(!profile.approved){ pendingStatus='waiting'; view={name:'pending'}; render(); return; }
       }
@@ -2720,47 +2648,22 @@ async function bootUser(){
 
 /* ---------- Boot ---------- */
 (async()=>{
-  // A wrapped confirmation link -- show only the "Continue" button and stop; nothing about
-  // sessions or local data matters until that's tapped, see AUTH_CONFIRM_URL above.
-  if(AUTH_CONFIRM_URL){ view={name:'confirmlink'}; render(); return; }
   await loadLocalData();
   if(sb){
     try{
-      // Arriving here via ANY auth link -- a working invite/recovery link, or one that turned out
-      // expired/already-used -- means the visitor's intent was to act on that specific link, so an
-      // unrelated session already sitting in this browser (e.g. still logged in as yourself while
-      // testing a colleague's link) should never be silently shown instead: a working link should
-      // land on its own fresh account, and a dead link should show the "expired" message, not
-      // whoever happened to already be signed in. Clearing any existing local session up front
-      // removes that old session from the picture entirely either way -- a working link's fresh
-      // session still gets established normally right after, via the listener below.
-      if(AUTH_HASH_TYPE==='invite' || AUTH_HASH_TYPE==='recovery' || AUTH_HASH_ERROR){
-        try{ await sb.auth.signOut({scope:'local'}); }catch(e){}
-      }
-      // Registered BEFORE getSession(), not after: a recovery/invite link's session comes from
-      // Supabase parsing the #access_token in the URL, which happens asynchronously and can still
-      // be in flight when getSession() resolves. If the listener were attached afterwards (as it
-      // was before), that event could fire into nothing and the app would fall through to the
-      // normal login screen instead of the set-password screen -- which is exactly what was
-      // happening. Reacting to it here, whenever it actually lands, closes that race.
+      // No more links/hash tokens to parse here at all -- a one-time code is verified directly
+      // from the verify-code screen's own form (doVerifyCode), so the session is always
+      // established by this app's own code, synchronously with a user action, never by a
+      // separate page load reacting to a URL.
       sb.auth.onAuthStateChange((event,session)=>{
         sbUser=session?.user||null;
-        if(sbUser && (event==='PASSWORD_RECOVERY' || AUTH_HASH_TYPE==='invite' || AUTH_HASH_TYPE==='recovery')){
-          view={name:'setpassword'}; render(); return;
-        }
-        if(!sbUser && view.name!=='login' && view.name!=='setpassword'){ view={name:'login'}; render(); }
+        if(!sbUser && view.name!=='login' && view.name!=='verifycode'){ view={name:'login'}; render(); }
       });
       const {data:{session}}=await sb.auth.getSession();
       sbUser=session?.user||null;
     }catch(e){ sbUser=null; }
   }
-  if(sbUser && (AUTH_HASH_TYPE==='invite' || AUTH_HASH_TYPE==='recovery')){ view={name:'setpassword'}; render(); }
-  else if(sbUser) await bootUser();
-  else if(AUTH_HASH_ERROR){
-    view={name:'login'};
-    renderLogin('That link has expired or was already used. Ask an admin to send a new invite, or tap "Forgot password?" again for a fresh reset link.');
-    try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){}
-  }
+  if(sbUser) await bootUser();
   else { view={name:'login'}; render(); }
   try{ await navigator.storage?.persist?.(); }catch(e){}
   if('serviceWorker' in navigator){
