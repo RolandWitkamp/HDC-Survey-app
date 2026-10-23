@@ -260,7 +260,7 @@ const SECTIONS = [
     {id:'bar', label:'Bar', type:'choice', options:YN, hours:{when:'Yes'}},
     {id:'pool', label:'Pool', type:'choice', options:YN, detail:{when:'Yes', type:'choice', options:['Indoor','Outdoor','Both']}, hours:{when:'Yes'}, standard:"Een zwembad wordt gedefinieerd als een bad bedoeld om in te zwemmen; dus geen jacuzzi of bubbelbad. Heeft het hotel alleen een buitenzwembad dat 's winters niet geopend is (of geen zwembad/fitness, ook niet publiek toegankelijk), dan wordt hiervoor pro rato een vergoeding aan het daggeld toegevoegd."},
     {id:'gym', label:'Gym', type:'choice', options:YN, hours:{when:'Yes'}, standard:"Artikel 2e — Sportfaciliteiten dienen in het hotel aanwezig te zijn, van deugdelijke kwaliteit en in voldoende mate. Een fitnessruimte is voldoende uitgerust als er cardiomachines én minstens één fitnessapparaat en/of carrousel met gewichten aanwezig zijn."},
-    {id:'otherFacilities', label:'Other facilities', type:'choice', options:YN, detail:{when:'Yes', type:'multi', options:['Spa','Sauna/steambath','Pedicure','Other'], other:'Other'}},
+    {id:'otherFacilities', label:'Other facilities', type:'choice', options:YN, detail:{when:'Yes', type:'multi', options:['Spa','Sauna/steambath','Pedicure','Other'], other:'Other'}, hours:{when:'Yes'}},
     {id:'shuttle', label:'Shuttle', type:'choice', options:YN}]},
   {id:'location', name:'Location', fields:[
     {id:'hotelArea', label:'Hotel area', type:'multi', tagPicker:true, options:['Airport','Downtown','Residential','Commercial/Business district','Suburban','Beach/Resort','Historic/Old town','Industrial/Business park','Rural','Other'], other:'Other', standard:"Artikel 2b — Een redelijke ligging t.o.v. vliegveld, winkels en recreatiemogelijkheden, in voldoende veilige omgeving en rekening houdend met unieke kenmerken van de bestemming. Uitgangspunt is te overnachten in of nabij het centrum van de stad; 'hotels in the middle of nowhere' worden voorkomen, tenzij lokale omstandigheden (bijv. veiligheid, ontbreken van één centraal centrum, onevenredig lange reistijd) een alternatieve locatie rechtvaardigen."},
@@ -269,7 +269,7 @@ const SECTIONS = [
     {id:'entertainment', label:'Distance to entertainment', type:'nearby', options:['Restaurants','Cinema','Shopping','Nightlife','Park','Supermarket'], modes:['Car','Subway','On foot']},
     {id:'publicTransport', label:'Public transport', type:'multi', options:['Subway','Bus/tram'], extra:'Cost 1-way taxi'}]},
   {id:'rooms', name:'Rooms general', fields:[
-    {id:'roomClass', label:'Room classification', type:'text', standard:"Artikel 2d — Een kwaliteitsniveau dat overeenkomt met dat van de bekende internationale hotelketens."},
+    {id:'roomClass', label:'Room classification', type:'select', options:['Standard Room','Superior Room','Deluxe Room','Executive Room','Junior Suite','Suite','Other'], other:'Other', standard:"Artikel 2d — Een kwaliteitsniveau dat overeenkomt met dat van de bekende internationale hotelketens."},
     {id:'roomNumbers', label:'Room numbers checked', type:'text', ph:'bijv. 1204, 1512'},
     {id:'roomSize', label:'Room size', type:'text', ph:'m2', standard:"Artikel 2a — Een hotelkamer die niet kleiner zal zijn dan ca. 3x4 meter (excl. badkamer, hal en nis)."},
     {id:'bathSize', label:'Bathroom size', type:'text', ph:'m2'},
@@ -673,7 +673,7 @@ function renderHome(){
       <button class="swipe-del" data-a="swipedeletetrip" data-id="${t.id}" aria-label="Delete trip">${ICON.trash}<span>Delete</span></button>
       <button class="survey-row" data-a="opentrip" data-id="${t.id}">
         <span class="stamp" data-s="0">${n}</span>
-        <span class="t"><b>${esc(t.city||'Untitled trip')}</b>
+        <span class="t"><b>${esc(tripCityLabel(t)||'Untitled trip')}</b>
           <span>${n} survey${n===1?'':'s'}${surveyedBy(t)?' · '+esc(surveyedBy(t)):''}</span></span>
       </button>
     </div>`}).join('') : `
@@ -736,7 +736,9 @@ function renderEdit(){
   // Runs every time this screen opens with no city code yet, not just on a brand-new survey.
   if(!s.city && s.tripId){
     const trip=S.trips.find(t=>t.id===s.tripId);
-    if(trip?.city) resolveCityCode(trip.city).then(code=>{
+    const knownCode=trip?tripCityCode(trip):'';
+    const lookup=knownCode?Promise.resolve(knownCode):(trip?.city?resolveCityCode(trip.city):Promise.resolve(''));
+    lookup.then(code=>{
       if(!code || s.city) return;
       s.city=code; touch(s);
       if(view.name==='edit' && view.id===s.id){
@@ -997,6 +999,14 @@ function extractCityCode(text){
 function cityNameFromTripText(text){
   return (text||'').replace(/\b[A-Z]{3}\b/gi,'').replace(/[,/]/g,' ').replace(/\s+/g,' ').trim();
 }
+// City name and airport code used to be one combined free-text field ("Riyadh, RUH") -- now two
+// separate fields (trip.city = name only, trip.cityCode = code), but an older trip that hasn't
+// been opened/edited since has no explicit cityCode yet, so this falls back to splitting the old
+// combined text for display, same as before. Once either field is edited the trip gets the new
+// explicit shape (see the summaryCity/summaryCityCode handlers) and this fallback no longer runs.
+function tripCityName(trip){ return trip.cityCode!==undefined ? (trip.city||'') : cityNameFromTripText(trip.city); }
+function tripCityCode(trip){ return trip.cityCode!==undefined ? (trip.cityCode||'') : extractCityCode(trip.city); }
+function tripCityLabel(trip){ return [tripCityName(trip),tripCityCode(trip)].filter(Boolean).join(', '); }
 // The trip's city field often has no explicit code at all ("Amsterdam", not "Amsterdam, AMS") --
 // look the city name up against the airports dataset to find its code too, not just the reverse.
 async function resolveCityCode(text){
@@ -1531,11 +1541,14 @@ function renderTrip(){
   const trip=curTrip(); if(!trip){ view={name:'home'}; return render(); }
   syncTripHotelNames(trip);
   const tripSurveys=[...S.surveys.filter(s=>s.tripId===trip.id)].sort((a,b)=>(b.updated||0)-(a.updated||0));
-  setBar(`<button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>${esc(trip.city||'Untitled trip')}</h1><button class="icon-btn" data-a="exportsummary" aria-label="Export">${ICON.share}</button>`);
+  setBar(`<button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>${esc(tripCityLabel(trip)||'Untitled trip')}</h1><button class="icon-btn" data-a="exportsummary" aria-label="Export">${ICON.share}</button>`);
   $('#app').innerHTML = `
     <section class="panel">
       <h2>Trip details</h2>
-      <label class="f">City / airport code (shown in the PDF header)<input id="summaryCity" value="${esc(trip.city)}" placeholder="e.g. Riyadh, RUH"></label>
+      <div class="grid2">
+        <label class="f">City (shown in the PDF header)<input id="summaryCity" value="${esc(tripCityName(trip))}" placeholder="e.g. Riyadh"></label>
+        <label class="f">Airport code <span class="hint">(auto-filled, editable)</span><input id="summaryCityCode" value="${esc(tripCityCode(trip))}" autocapitalize="characters" maxlength="3" placeholder="e.g. RUH"></label>
+      </div>
       <label class="f">Hodaco Rep <span class="hint">(auto-filled into each survey in this trip, shown in the PDF header)</span><input id="tripHodacoRep" value="${esc(trip.reps!==undefined?trip.reps:S.defaultRep)}"></label>
       <label class="f">NI Rep <span class="hint">(auto-filled into each survey in this trip, shown in the PDF header)</span><select class="inp" id="tripNiRep">
         <option value=""${!trip.inspector?' selected':''}>— Select —</option>
@@ -1667,7 +1680,7 @@ document.addEventListener('click', async e=>{
   }
   else if(a==='newsurvey'){
     const trip=curTrip(); if(!trip) return;
-    const n={id:uid(),hotel:'',address:'',city:extractCityCode(trip.city),reps:(trip.reps!==undefined?trip.reps:S.defaultRep)||S.defaultRep,date:today(),inspector:trip.inspector||'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''},tripId:trip.id};
+    const n={id:uid(),hotel:'',address:'',city:tripCityCode(trip),reps:(trip.reps!==undefined?trip.reps:S.defaultRep)||S.defaultRep,date:today(),inspector:trip.inspector||'',f:seedMealDefaults(FIELD.mealHours),notes:{},scores:{},compliance:{},caoAuto:true,driveTimeAuto:true,airQualityAuto:true,photos:[],status:'concept',updated:Date.now(),recip:{groups:[],extra:''},tripId:trip.id};
     S.surveys.push(n); persist(); view={name:'edit',id:n.id}; render();
   }
   else if(a==='opentrip'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'trip',id:b.dataset.id}; render(); }
@@ -1773,7 +1786,29 @@ document.addEventListener('click', async e=>{
 document.addEventListener('input', e=>{
   const el=e.target, s=cur(), d=el.dataset;
   if(el.id==='summaryText'){ const t=curTrip(); if(t){ t.summary=el.value; t.updated=Date.now(); persist(); } return; }
-  if(el.id==='summaryCity'){ const t=curTrip(); if(t){ t.city=el.value; t.updated=Date.now(); persist(); } return; }
+  if(el.id==='summaryCity'){
+    const t=curTrip(); if(!t) return;
+    t.city=el.value; if(t.cityCode===undefined) t.cityCode=tripCityCode(t);
+    t.updated=Date.now(); persist();
+    // Only auto-fill the code while it hasn't been touched by hand -- once the user has typed
+    // into that field themselves (cityCodeManual), a later city-name edit never overwrites it.
+    if(!t.cityCodeManual){
+      const name=el.value;
+      resolveCityCode(name).then(code=>{
+        if(!code || t.cityCodeManual || t.city!==name) return;
+        t.cityCode=code; persist();
+        if(view.name==='trip' && view.id===t.id){ const inp=document.querySelector('#summaryCityCode'); if(inp) inp.value=code; }
+      });
+    }
+    return;
+  }
+  if(el.id==='summaryCityCode'){
+    const t=curTrip(); if(t){
+      let v=el.value.toUpperCase(); if(el.value!==v) el.value=v;
+      t.cityCode=v; t.cityCodeManual=true; t.updated=Date.now(); persist();
+    }
+    return;
+  }
   if(el.id==='tripNiRep'){ const t=curTrip(); if(t){ t.inspector=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='tripHodacoRep'){ const t=curTrip(); if(t){ t.reps=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='summaryFlights'){ const t=curTrip(); if(t){ t.flights=el.value; t.updated=Date.now(); persist(); } return; }
@@ -1862,7 +1897,12 @@ function updateCaoAuto(s){
   if(!bad && s.f.cao==='No'){ delete s.f.cao; return true; }
   return false;
 }
-function touch(s){ s.updated=Date.now(); const changed=updateCaoAuto(s); persist(); if(changed && view.name==='edit' && view.id===s.id) rerenderField(s,'cao'); }
+// Re-renders the CAO findings list on every touch, not just when updateCaoAuto flips s.f.cao
+// itself -- a second finding added while cao was already "No" from an earlier one left cao's own
+// value unchanged, so the old "only re-render when changed" guard never refreshed the on-screen
+// list: a finding like Construction outside could be fully saved in the data yet never show up
+// in the summary until something else forced a re-render.
+function touch(s){ s.updated=Date.now(); updateCaoAuto(s); persist(); if(view.name==='edit' && view.id===s.id) rerenderField(s,'cao'); }
 function compress(file){ return new Promise((res,rej)=>{
   const url=URL.createObjectURL(file); const img=new Image();
   img.onload=()=>{ const max=1280; let w=img.naturalWidth,h=img.naturalHeight; const r=Math.min(1,max/Math.max(w,h)); w=Math.round(w*r); h=Math.round(h*r);
@@ -2066,10 +2106,10 @@ function makeSummaryPdf(trip,mapDataUrl){
   const HEAD_SIZE=14, POINT_SIZE=10.5, PARA_SIZE=10, LINE_H=5, PARA_LINE_H=4.6;
   const blocks=parseSummaryBlocks(trip);
 
-  const headerSub=[trip.city,dateNL(today()),surveyedBy(trip)?'Surveyed by '+surveyedBy(trip):''].filter(Boolean).join('   |   ');
+  const headerSub=[tripCityLabel(trip),dateNL(today()),surveyedBy(trip)?'Surveyed by '+surveyedBy(trip):''].filter(Boolean).join('   |   ');
   doc.setFillColor(...KLMBLUE); doc.rect(0,0,W,36,'F');
   setF(9,'bold',[170,190,215]); doc.text('PILLOW REPORT',M,12);
-  setF(18,'bold',[255,255,255]); doc.text(trip.city?`Hotel Summary — ${trip.city}`:'Hotel Summary',M,24);
+  setF(18,'bold',[255,255,255]); doc.text(tripCityLabel(trip)?`Hotel Summary — ${tripCityLabel(trip)}`:'Hotel Summary',M,24);
   setF(9,'normal',[200,212,228]); doc.text(headerSub,M,30);
   y=48;
 
@@ -2183,7 +2223,7 @@ function makeClassicPdf(trip,mapDataUrl){
 
   doc.setFillColor(...KLMBLUE); doc.rect(0,0,W,36,'F');
   setF(9,'bold',[170,190,215]); doc.text('PILLOW REPORT',M,12);
-  setF(18,'bold',[255,255,255]); doc.text(trip.city?`Hotel Survey Report — ${trip.city}`:'Hotel Survey Report',M,24);
+  setF(18,'bold',[255,255,255]); doc.text(tripCityLabel(trip)?`Hotel Survey Report — ${tripCityLabel(trip)}`:'Hotel Survey Report',M,24);
   setF(9,'normal',[200,212,228]); doc.text(dateNL(today()),M,30);
   y=48;
 
@@ -2272,7 +2312,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='3.2.0';
+const APP_VERSION='3.4.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2343,9 +2383,9 @@ async function saveWord(s){
 }
 function makeSummaryRtf(trip){
   const blocks=parseSummaryBlocks(trip);
-  const headerSub=[trip.city,dateNL(today()),surveyedBy(trip)?'Surveyed by '+surveyedBy(trip):''].filter(Boolean).join('   |   ');
+  const headerSub=[tripCityLabel(trip),dateNL(today()),surveyedBy(trip)?'Surveyed by '+surveyedBy(trip):''].filter(Boolean).join('   |   ');
   let body='';
-  body+=`{\\pard\\sa80\\fs32\\b\\cf1 Hotel Summary${trip.city?' \\u8212? '+rtfEsc(trip.city):''}\\par}\n`;
+  body+=`{\\pard\\sa80\\fs32\\b\\cf1 Hotel Summary${tripCityLabel(trip)?' \\u8212? '+rtfEsc(tripCityLabel(trip)):''}\\par}\n`;
   body+=`{\\pard\\sa240\\fs20 ${rtfEsc(headerSub)}\\par}\n`;
   blocks.forEach(block=>{
     if(block.heading) body+=`{\\pard\\sb200\\sa80\\fs24\\b\\cf1 ${rtfEsc(block.heading)}\\par}\n`;
@@ -2384,7 +2424,7 @@ function rtfTableRow(cells,colWidths){
 function makeClassicRtf(trip){
   const matches=matchSummaryBlocksToSurveys(trip);
   let body='';
-  body+=`{\\pard\\sa80\\fs32\\b\\cf1 Hotel Survey Report${trip.city?' \\u8212? '+rtfEsc(trip.city):''}\\par}\n`;
+  body+=`{\\pard\\sa80\\fs32\\b\\cf1 Hotel Survey Report${tripCityLabel(trip)?' \\u8212? '+rtfEsc(tripCityLabel(trip)):''}\\par}\n`;
   body+=`{\\pard\\sa200\\fs20 ${rtfEsc(dateNL(today()))}\\par}\n`;
   body+=`{\\pard\\sa60\\fs20\\b Survey date: -\\par}\n`;
   body+=`{\\pard\\sa20\\fs20\\b Surveying party: -\\b0   (SPL/NI)\\par}\n`;
