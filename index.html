@@ -230,6 +230,8 @@ const ICON={
   image:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
   logout:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'
 };
+const NI_REPS=['Aibar','Snijders','Ten Hove'];
+const REASON_OPTIONS=['Survey on request of KLM','Survey on request of HDC','New destination'];
 const AIRLINES=['Aegean Airlines','Aer Lingus','Aeroflot','Aeromexico','Air Algerie','Air Astana','Air Baltic','Air Canada','Air China','Air Europa','Air France','Air India','Air New Zealand','Air Serbia','Air Transat','Alaska Airlines','Alitalia (ITA Airways)','All Nippon Airways (ANA)','American Airlines','Asiana Airlines','Austrian Airlines','Avianca','Azerbaijan Airlines','Bangkok Airways','Batik Air','British Airways','Brussels Airlines','Bulgaria Air','Cathay Pacific','Cebu Pacific','China Airlines','China Eastern Airlines','China Southern Airlines','Condor','Copa Airlines','Croatia Airlines','Delta Air Lines','EgyptAir','EL AL','Emirates','Ethiopian Airlines','Etihad Airways','Eurowings','EVA Air','Finnair','flydubai','Garuda Indonesia','Gulf Air','Hainan Airlines','Hawaiian Airlines','Hong Kong Airlines','Iberia','Icelandair','IndiGo','Japan Airlines (JAL)','Jet2','JetBlue','Jetstar Airways','Juneyao Airlines','Kenya Airways','KLM Royal Dutch Airlines','Korean Air','Kuwait Airways','LATAM Airlines','LOT Polish Airlines','Lufthansa','Luxair','Malaysia Airlines','Malta Air','Middle East Airlines','Norwegian Air','Oman Air','Pakistan International Airlines','Pegasus Airlines','Philippine Airlines','Qantas','Qatar Airways','Royal Air Maroc','Royal Brunei Airlines','Royal Jordanian','RwandAir','Ryanair','SAS Scandinavian Airlines','Saudia','Scoot','Shenzhen Airlines','Singapore Airlines','South African Airways','Southwest Airlines','SpiceJet','Spirit Airlines','SriLankan Airlines','Sun Country Airlines','Swiss International Air Lines','TAAG Angola Airlines','TAP Air Portugal','Thai Airways','Transavia','Tunisair','Turkish Airlines','Ukraine International Airlines','United Airlines','Uzbekistan Airways','Vietnam Airlines','Virgin Atlantic','Virgin Australia','Vistara','Vueling','WestJet','Wizz Air','Xiamen Airlines'];
 const SECTIONS = [
   {id:'general', name:'General', fields:[
@@ -390,6 +392,19 @@ let advancedUnlocked = false, versionTaps = 0, versionTapTimer = null;
 let saveTimer=null;
 function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('trips',S.trips); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); syncNow(); }
 function persist(){ clearTimeout(saveTimer); saveTimer=setTimeout(flushPersist,300); }
+// Everything already auto-saves (persist() above, debounced + synced in the background) -- this
+// is purely for the explicit "Save" buttons, which skip the debounce and wait for the sync to
+// actually finish so the toast can honestly say whether it reached the server or just this device.
+async function doManualSave(label){
+  clearTimeout(saveTimer); saveTimer=null;
+  store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('trips',S.trips);
+  store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress);
+  store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken);
+  store.set('autoSavePhotos',S.autoSavePhotos);
+  const canSync=sb && sbUser && navigator.onLine;
+  if(canSync) await syncNow();
+  toast(canSync ? `${label} saved and synced.` : `${label} saved on this device.`);
+}
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState==='hidden'){
     if(saveTimer) flushPersist();
@@ -690,7 +705,11 @@ function renderEdit(){
       <label class="f">Date</label>
       <div class="grid3">${dateSelectHTML(s)}</div>
       <label class="f">Hodaco Rep<input data-top="reps" value="${esc(s.reps)}"></label>
-      <label class="f">NI Rep<input data-top="inspector" value="${esc(s.inspector)}"></label>
+      <label class="f">NI Rep<select class="inp" data-top="inspector">
+        <option value=""${!s.inspector?' selected':''}>— Select —</option>
+        ${NI_REPS.map(n=>`<option value="${esc(n)}"${s.inspector===n?' selected':''}>${esc(n)}</option>`).join('')}
+        ${s.inspector && !NI_REPS.includes(s.inspector)?`<option value="${esc(s.inspector)}" selected>${esc(s.inspector)}</option>`:''}
+      </select></label>
     </section>
     <section class="panel">
       <h2>Photos</h2>
@@ -711,7 +730,10 @@ function renderEdit(){
         <label class="add-photo">📷 Add photo<input type="file" accept="image/*" multiple data-photo="1" data-photo-label="${esc(sec.name)}"></label>
         <button type="button" class="btn wide sec-collapse" data-a="closesec" data-id="${sec.id}">▴ Collapse ${esc(sec.name)}</button>
       </div>
-    </section>`).join('')}`;
+    </section>`).join('')}
+    <section class="panel">
+      <button type="button" class="btn wide primary" data-a="savesurvey">Save survey</button>
+    </section>`;
   setDock(editDockHTML(s));
   // A straight copy of the trip's city code happens instantly at survey creation (above); this
   // catches the rest -- the trip's city field only had a plain name ("Amsterdam", no "AMS") so
@@ -1521,7 +1543,13 @@ function renderTrip(){
       <label class="f">City / airport code (shown in the PDF header)<input id="summaryCity" value="${esc(trip.city)}" placeholder="e.g. Riyadh, RUH"></label>
       <label class="f">Inspector(s) (shown in the PDF header)<input id="summaryInspectors" value="${esc(trip.inspectors)}" placeholder="e.g. Witkamp & Snijders"></label>
       <label class="f">Flight schedule (outbound &amp; return)<textarea class="inp" id="summaryFlights" rows="4" placeholder="${esc('KL123  06-10-2026  AMS-RUH  10:20-18:05\nKL456  10-10-2026  RUH-AMS  20:10-01:45')}">${esc(trip.flights)}</textarea></label>
-      <label class="f">Reason for survey<textarea class="inp" id="summaryReason" rows="3" placeholder="e.g. Scheduled annual survey / new destination / complaint follow-up">${esc(trip.reason)}</textarea></label>
+      <label class="f">Reason for survey<select class="inp" id="summaryReasonSelect">
+        <option value=""${!trip.reason?' selected':''}>— Select —</option>
+        ${REASON_OPTIONS.map(o=>`<option value="${esc(o)}"${trip.reason===o&&!trip.reasonOther?' selected':''}>${esc(o)}</option>`).join('')}
+        <option value="other"${(trip.reasonOther!==undefined?trip.reasonOther:(trip.reason&&!REASON_OPTIONS.includes(trip.reason)))?' selected':''}>Other</option>
+      </select></label>
+      ${(trip.reasonOther!==undefined?trip.reasonOther:(trip.reason&&!REASON_OPTIONS.includes(trip.reason)))?`
+      <label class="f">Reason (please specify)<textarea class="inp" id="summaryReasonOther" rows="3" placeholder="Describe the reason for this survey">${esc(trip.reason)}</textarea></label>`:''}
     </section>
     <section class="panel">
       <h2>Surveys in this trip</h2>
@@ -1542,6 +1570,9 @@ function renderTrip(){
       <p class="hint">Hotel names from this trip's surveys are added automatically. Type or paste your plus and minus points per hotel — works with text copied from Word, Notes, Google Docs, anything. End a hotel name with a colon (:) to start a new hotel — each one gets its own page in the PDF. Lines starting with + or - become bullet points; any other text becomes a paragraph under that hotel.</p>
       <textarea class="inp" id="summaryText" rows="18" placeholder="${esc('Hilton Riyadh:\n+ Great location\n+ Friendly staff\n- Noisy AC unit\nA short paragraph with more detail can go here too.\n\nMovenpick Amsterdam:\n+ Spacious rooms\n- Slow check-in')}">${esc(trip.summary)}</textarea>
       <label class="add-photo" style="margin-top:12px">📄 Import text file (.txt)<input type="file" accept=".txt,text/plain" id="summaryImport" style="position:absolute;width:1px;height:1px;opacity:0"></label>
+    </section>
+    <section class="panel">
+      <button type="button" class="btn wide primary" data-a="savetrip">Save trip</button>
     </section>
     <section class="panel">
       <button type="button" class="btn wide danger" data-a="deletetrip">Delete trip</button>
@@ -1642,6 +1673,8 @@ document.addEventListener('click', async e=>{
   else if(a==='opentrip'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'trip',id:b.dataset.id}; render(); }
   else if(a==='swipedeletetrip'){ const trip=S.trips.find(x=>x.id===b.dataset.id); if(trip && deleteTrip(trip)){ render(); } else closeSwipes(); }
   else if(a==='deletetrip'){ const trip=curTrip(); if(trip && deleteTrip(trip)){ view={name:'home'}; render(); } }
+  else if(a==='savetrip'){ doManualSave('Trip'); }
+  else if(a==='savesurvey'){ doManualSave('Survey'); }
   else if(a==='open'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'edit',id:b.dataset.id}; render(); }
   else if(a==='swipedelete'){ const sv=S.surveys.find(x=>x.id===b.dataset.id); if(sv && confirm(`Delete survey "${title(sv)}"?`)){ pendingDeletes.surveys.push(sv.id); S.surveys=S.surveys.filter(x=>x.id!==sv.id); persist(); render(); toast('Survey deleted'); } else closeSwipes(); }
   else if(a==='report'){view={name:'report',id:s.id};render();}
@@ -1743,7 +1776,11 @@ document.addEventListener('input', e=>{
   if(el.id==='summaryCity'){ const t=curTrip(); if(t){ t.city=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='summaryInspectors'){ const t=curTrip(); if(t){ t.inspectors=el.value; t.updated=Date.now(); persist(); } return; }
   if(el.id==='summaryFlights'){ const t=curTrip(); if(t){ t.flights=el.value; t.updated=Date.now(); persist(); } return; }
-  if(el.id==='summaryReason'){ const t=curTrip(); if(t){ t.reason=el.value; t.updated=Date.now(); persist(); } return; }
+  if(el.id==='summaryReasonSelect'){ const t=curTrip(); if(t){
+    if(el.value==='other'){ t.reasonOther=true; }
+    else { t.reasonOther=false; t.reason=el.value; }
+    t.updated=Date.now(); persist(); renderTrip(); } return; }
+  if(el.id==='summaryReasonOther'){ const t=curTrip(); if(t){ t.reason=el.value; t.updated=Date.now(); persist(); } return; }
   if(d.k){ const was=s? doneCount(s):0; if(d.k==='driveTime') s.driveTimeAuto=false; if(d.k==='airQualityIndex') s.airQualityAuto=false; s.f[d.k]=el.value; touch(s);
     const fld=FIELD[d.k]; if(fld?.type==='slider'){ const sv=document.querySelector(`[data-sliderval="${d.k}"]`); if(sv) sv.textContent=sliderText(fld,Number(el.value)); }
     const mm=d.k.match(/^mealHours\.(\d+)\.(\d+)\.(from|to)$/);
@@ -2234,7 +2271,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='3.0.0';
+const APP_VERSION='3.1.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
