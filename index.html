@@ -204,6 +204,16 @@ textarea{resize:vertical;min-height:72px}
 .sec-meta{font-size:.9rem;color:var(--muted);font-variant-numeric:tabular-nums;flex:none;min-width:64px;text-align:right}
 .sec-meta .fl{color:var(--s1);font-weight:700}
 .stamp[data-s="ok"]{background:var(--s5)}.stamp[data-s="warn"]{background:var(--s2)}.stamp[data-s="bad"]{background:var(--s1)}
+.nbadge{display:inline-block;font-size:.72rem;font-weight:700;border-radius:99px;padding:2px 8px;margin-right:6px;vertical-align:middle;background:var(--soft);color:var(--ink)}
+.nbadge.finding{background:var(--s2);color:#fff}
+.notecard{border-top:1px solid var(--line);padding:12px 0}
+.notecard:first-of-type{border-top:0;padding-top:4px}
+.notecard .nmeta{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.9rem;margin-bottom:6px}
+.notecard .nmeta .link{flex:none}
+.fn-type{margin-top:8px}
+.chips button.notes-chip{background:var(--accent);color:#fff}
+.chips button.notes-chip b{color:#fff}
+.dock-badge{position:absolute;top:-6px;right:-6px;background:var(--accent);color:#fff;font-size:11px;line-height:1;padding:3px 6px;border-radius:9px;font-weight:700}
 </style>
 </head>
 <body>
@@ -388,6 +398,7 @@ let pendingDeletes = {surveys:[], groups:[], trips:[]};
 let S = { surveys:[], groups:[], trips:[], defaultRep:'', autoDriveTime:true, autoAddress:true, googleMapsKey:'', autoAirQuality:true, waqiToken:'', autoSavePhotos:true };
 let view = {name:'home', id:null};
 let noteOverride = new Map();
+let missingOnly = false, missingFor = null;
 let advancedUnlocked = false, versionTaps = 0, versionTapTimer = null;
 let saveTimer=null;
 function flushPersist(){ clearTimeout(saveTimer); saveTimer=null; store.set('surveys-v2',S.surveys); store.set('groups',S.groups); store.set('trips',S.trips); store.set('defaultRep',S.defaultRep); store.set('autoDriveTime',S.autoDriveTime); store.set('autoAddress',S.autoAddress); store.set('googleMapsKey',S.googleMapsKey); store.set('autoAirQuality',S.autoAirQuality); store.set('waqiToken',S.waqiToken); store.set('autoSavePhotos',S.autoSavePhotos); syncNow(); }
@@ -458,6 +469,43 @@ function filled(s,f){
 const nearbySlug = o=>o.toLowerCase().replace(/[^a-z0-9]+/g,'');
 const isFlag = (s,f)=>(!!f.flag && f.flag.includes(s.f[f.id])) || (!!f.detail?.flag && s.f[f.id]===f.detail.when && f.detail.flag.includes(s.f[f.id+'.detail']));
 const flags = s=>ALL.filter(f=>isFlag(s,f));
+/* ---------- Notes: every note is either FYI or a Finding (a finding is worth reporting, but does not by
+   itself make the hotel non-compliant). Notes typed at a question live in that question's section; notes
+   added on the Notes screen go into the category you pick, or are filed automatically from their text. */
+const CAT_WORDS={
+  general:['management','manager','staff','personeel','reception','receptie','front desk','check-in','checkin','check in','lobby','rating','review','renovation','renovatie','connecting','guest','gasten','occupancy','airline','crew desk','welcome','service'],
+  facilities:['breakfast','ontbijt','lunch','dinner','diner','restaurant','food','eten','menu','buffet','a la carte','bar','pool','zwembad','gym','fitness','spa','sauna','steam','room service','roomservice','tray','shuttle','allerg','gluten','vegetar','vegan','coffee shop','laundry','wasserette','meal','maaltijd'],
+  location:['location','locatie','area','wijk','neighbourhood','neighborhood','omgeving','airport','vliegveld','luchthaven','city','stad','centre','center','centrum','drive','rijtijd','traffic','verkeer','taxi','uber','transport','subway','metro','bus','tram','shop','winkel','supermarket','supermarkt','mall','park','beach','strand','walk','lopen','distance','afstand','nightlife','cinema'],
+  rooms:['room','kamer','bed','matras','mattress','pillow','kussen','bathroom','badkamer','shower','douche','bath','bad ','toilet','window','raam','ramen','curtain','gordijn','blackout','black-out','aircon','air-con','airco','air conditioning','temperature','temperatuur','heating','verwarming','desk','bureau','fridge','koelkast','minibar','kettle','waterkoker','coffee','koffie','tea','thee','iron','strijk','towel','handdoek','water','tv','wifi','wi-fi','internet','socket','stopcontact','clean','schoon','smell','geur','carpet','tapijt','size','m2'],
+  roomSafety:['peephole','peep hole','spion','chain','ketting','door lock','deurslot','extra lock','slot','safe','kluis','escape plan','vluchtplan','evacuation plan','latch','deadbolt'],
+  security:['fire','brand','sprinkler','smoke','rook','emergency exit','nooduitgang','exit','uitgang','extinguisher','blusser','hose','cctv','camera','elevator','lift','keycard','sleutelkaart','evacuation','evacuatie','security','beveiliging','guard','bewaking','fire drill','alarm','safety','veiligheid','air quality','luchtkwaliteit','sustainab','duurzaam'],
+  noise:['noise','noisy','geluid','lawaai','herrie','loud','luid','hard','sound','construction','bouw','works','werkzaamheden','piping','leidingen','pipes','hallway noise','music','muziek','party','feest','traffic noise','neighbour','buren','thin walls','dunne muren'],
+  verdict:['cao','compliance','compliant','verdict','conclusie']
+};
+function autoCat(text){
+  const t=' '+String(text||'').toLowerCase()+' '; let best='general', score=0;
+  SECTIONS.forEach(sec=>{ const n=(CAT_WORDS[sec.id]||[]).reduce((a,w)=>a+(t.includes(w)?w.length:0),0)
+    + sec.fields.reduce((a,f)=>a+(t.includes(f.label.toLowerCase())?f.label.length*2:0),0);
+    if(n>score){ score=n; best=sec.id; } });
+  return best; }
+const catName = id=>(SECTIONS.find(x=>x.id===id)||{name:'General'}).name;
+const noteTypeOf = (s,k)=>s.noteType?.[k] || (FIELD[k] && isFlag(s,FIELD[k]) ? 'finding' : 'fyi');
+const typeLabel = t=>t==='finding'?'Finding':'FYI';
+/* Survey marked complete on purpose while questions are still open (e.g. hotel rejected on arrival) */
+const forcedDone = s=>!!(s.completeOverride && s.completeOverride.reason);
+const COMPLETE_REASONS=['Hotel rejected on arrival','Survey could not be completed on site','Other'];
+const progLabel = s=>`${doneCount(s)} of ${TOTAL} items filled in`;
+function allNotes(s){
+  const out=[];
+  ALL.forEach(f=>{ const t=s.notes?.[f.id]; if(nonEmpty(t)) out.push({kind:'field',id:f.id,sec:f.sec,label:f.label,text:t,type:noteTypeOf(s,f.id),flagged:isFlag(s,f)}); });
+  (s.freeNotes||[]).forEach(n=>{ if(!nonEmpty(n.text)) return; const sec=n.cat||autoCat(n.text);
+    out.push({kind:'free',id:n.id,sec,label:catName(sec),text:n.text,type:n.type||'fyi',auto:!n.cat,flagged:false}); });
+  return out; }
+/* Notes that are not already shown with a flagged answer in the findings list */
+const extraNotes = (s,type)=>allNotes(s).filter(n=>n.type===type && !n.flagged);
+const typeButtons = (act,id,t)=>`<div class="opts fn-type" role="group" aria-label="Note type">
+  <button type="button" data-a="${act}" data-id="${id}" data-v="fyi" aria-pressed="${t==='fyi'}">FYI</button>
+  <button type="button" data-a="${act}" data-id="${id}" data-v="finding" aria-pressed="${t==='finding'}">Finding</button></div>`;
 const doneCount = (s,fs=ALL)=>reqFields(fs).filter(f=>filled(s,f)).length;
 function verdict(s){ const c=s.f.cao, n=flags(s).length;
   if(c==='No') return {k:'bad', t:'!', w:'Not CAO-compliant'};
@@ -515,11 +563,13 @@ function setBar(html){
 function setDock(html){ const d=$('#dock'); if(!html){d.hidden=true;return;} d.hidden=false; $('#dockIn').innerHTML=html; }
 function editDockHTML(s){
   const remaining=TOTAL-doneCount(s);
-  return `<button class="btn primary" data-a="report" style="flex:1" ${remaining>0?'disabled':''}>${remaining>0?`${remaining} item${remaining===1?'':'s'} left`:'Report & share'}</button>
+  const ready=remaining<=0||forcedDone(s);
+  return `<button class="btn ${ready?'primary':''}" data-a="${ready?'report':'showmissing'}" style="flex:1">${ready?'Report & share':`${remaining} item${remaining===1?'':'s'} left · show`}</button>
+    <button type="button" class="btn dock-photo-btn" data-a="notes" aria-label="Notes" style="font-size:1.3rem">📝${allNotes(s).length?`<span class="dock-badge">${allNotes(s).length}</span>`:''}</button>
     <label class="btn dock-photo-btn" aria-label="Add photo">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
 }
 function render(){ window.scrollTo(0,0);
-  ({home:renderHome,edit:renderEdit,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin,verifycode:renderVerifyCode,approvals:renderApprovals,pending:renderPendingApproval})[view.name](); }
+  ({home:renderHome,edit:renderEdit,notes:renderNotes,report:renderReport,settings:renderSettings,docs:renderDocs,trip:renderTrip,login:renderLogin,verifycode:renderVerifyCode,approvals:renderApprovals,pending:renderPendingApproval})[view.name](); }
 
 // Password-based login (and its invite/reset-link machinery) is gone: it kept landing people on
 // an already-expired link, mainly because automated e-mail security scanners silently visit
@@ -683,19 +733,27 @@ function renderHome(){
   setDock(`<button class="btn primary" data-a="new">+ New survey trip</button>`);
 }
 
+function progHTML(s){ const left=TOTAL-doneCount(s);
+  return left>0 ? `<button type="button" class="link" data-a="${missingOnly?'showall':'showmissing'}" style="padding:0;text-align:left">${progLabel(s)} · ${missingOnly?'show all questions':`show the ${left} open question${left===1?'':'s'}`}</button>` : progLabel(s); }
+function forceHTML(s){
+  if(forcedDone(s)) return `<b>Marked as complete:</b> ${esc(s.completeOverride.reason)} · <button type="button" class="link" data-a="undoforce" style="padding:0">Undo</button>`;
+  return TOTAL-doneCount(s)>0 ? `<button type="button" class="link" data-a="forcecomplete" style="padding:0">Finish without answering everything…</button>` : ''; }
 function renderEdit(){
   const s=cur(); if(!s){view={name:'home'};return render();}
+  if(missingFor!==s.id){ missingOnly=false; missingFor=s.id; }
   setBar(`<button class="icon-btn" data-a="back-trip" aria-label="Back">←</button><h1>${esc(title(s))}</h1><button class="icon-btn" data-a="sharesurvey" aria-label="Export survey (backup)">${ICON.share}</button><button class="icon-btn" data-a="savephotos" aria-label="Save photos to library">${ICON.image}</button><button class="icon-btn" data-a="delete" aria-label="Delete survey">${ICON.trash}</button>`);
   const v=verdict(s);
   $('#app').innerHTML = `
     <section class="panel">
       <div class="summary"><span class="stamp big" id="ovStamp" data-s="${v.k}">${v.t}</span>
         <div class="txt"><b id="ovWord">${v.w}</b>
-        <p class="hint" id="progTxt">${doneCount(s)} of ${TOTAL} items filled in</p>
-        <div class="progress"><i id="progBar" style="width:${doneCount(s)/TOTAL*100}%"></i></div></div></div>
+        <p class="hint" id="progTxt">${progHTML(s)}</p>
+        <div class="progress"><i id="progBar" style="width:${doneCount(s)/TOTAL*100}%"></i></div>
+        <p class="hint" id="forceTxt" style="margin-top:8px">${forceHTML(s)}</p></div></div>
     </section>
+    ${missingOnly?`<section class="panel" id="missingBanner"><p><b>Showing only the ${TOTAL-doneCount(s)} open question${TOTAL-doneCount(s)===1?'':'s'}.</b> Answered ones stay visible until you leave this view.</p><button type="button" class="btn wide" style="margin-top:10px" data-a="showall">Show all questions</button></section>`:''}
     <div class="chips-wrap"><nav class="chips" id="chips" aria-label="Sections">${chipsHTML(s)}</nav><button type="button" class="icon-btn chips-collapse" data-a="collapseall" aria-label="Collapse all">${ICON.collapse}</button></div>
-    <section class="panel" id="sec-hotel">
+    <section class="panel" id="sec-hotel" ${missingOnly?'hidden':''}>
       <h2>Hotel</h2>
       <label class="f">City code<input data-top="city" value="${esc(s.city)}" autocapitalize="characters" maxlength="3" placeholder="e.g. NBO"></label>
       <div class="ta-wrap"><label class="f">Hotel name<input data-top="hotel" value="${esc(s.hotel)}" autocomplete="off"></label>
@@ -705,27 +763,30 @@ function renderEdit(){
       <label class="f">Date</label>
       <div class="grid3">${dateSelectHTML(s)}</div>
       <label class="f">Hodaco Rep<input data-top="reps" value="${esc(s.reps)}"></label>
+      <label class="check" style="display:flex;align-items:center;gap:10px;margin-top:14px">
+        <input type="checkbox" data-stayed="1" ${s.stayed?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
+        <span><b>We stayed overnight in this hotel</b></span></label>
     </section>
-    <section class="panel">
+    <section class="panel" ${missingOnly?'hidden':''}>
       <h2>Photos</h2>
       <p class="hint">Take or choose a photo and give it a label, e.g. Breakfast, Gym or Room 512.</p>
       <div class="photos" data-photos>${photosHTML(s)}</div>
       <label class="add-photo">📷 Add photo<input type="file" accept="image/*" multiple data-photo="1"></label>
       <button type="button" class="btn wide" style="margin-top:10px" data-a="savephotos" data-photos-save-btn ${s.photos.length?'':'hidden'}>Save photos to library</button>
     </section>
-    ${SECTIONS.map(sec=>`
+    ${SECTIONS.map(sec=>{ const open=missingOnly?reqFields(sec.fields).filter(f=>!filled(s,f)):null; if(open && !open.length) return ''; return `
     <section class="panel" id="sec-${sec.id}">
-      <button type="button" class="cat-head" data-a="togglesec" aria-expanded="false">
+      <button type="button" class="cat-head" data-a="togglesec" aria-expanded="${missingOnly}">
         <h2>${sec.name}</h2>
         <span class="sec-meta" data-meta="${sec.id}">${metaHTML(s,sec)}</span>
         <span class="chev">▾</span>
       </button>
-      <div class="sec-body" hidden>
-        ${sec.fields.map(f=>fieldHTML(s,f)).join('')}
+      <div class="sec-body" ${missingOnly?'':'hidden'}>
+        ${(open||sec.fields).map(f=>fieldHTML(s,f)).join('')}
         <label class="add-photo">📷 Add photo<input type="file" accept="image/*" multiple data-photo="1" data-photo-label="${esc(sec.name)}"></label>
         <button type="button" class="btn wide sec-collapse" data-a="closesec" data-id="${sec.id}">▴ Collapse ${esc(sec.name)}</button>
       </div>
-    </section>`).join('')}
+    </section>`; }).join('')}
     <section class="panel">
       <button type="button" class="btn wide primary" data-a="savesurvey">Save survey</button>
     </section>`;
@@ -752,7 +813,7 @@ function renderEdit(){
   if(!s.f.driveTime) scheduleDriveTimeLookup(s);
   if(s.photos.some(p=>!p.data)) ensurePhotosData(s.photos).then(()=>{ if(view.name==='edit' && view.id===s.id) refreshPhotosUI(s); });
 }
-function chipsHTML(s){ return SECTIONS.map(sec=>{ const n=sec.fields.filter(f=>isFlag(s,f)).length;
+function chipsHTML(s){ return `<button type="button" data-a="notes" class="notes-chip">📝 Notes<b>${allNotes(s).length}</b></button>`+SECTIONS.map(sec=>{ const n=sec.fields.filter(f=>isFlag(s,f)).length;
   return `<button type="button" data-a="jumpsec" data-id="${sec.id}" class="${n?'has-flag':''}">${sec.name}<b>${n?'! '+n:doneCount(s,sec.fields)+'/'+reqFields(sec.fields).length}</b></button>`; }).join(''); }
 function metaHTML(s,sec){ const n=sec.fields.filter(f=>isFlag(s,f)).length;
   return `${doneCount(s,sec.fields)}/${reqFields(sec.fields).length}${n?` · <span class="fl">${n} finding${n>1?'s':''}</span>`:''}`; }
@@ -912,11 +973,12 @@ function fieldHTML(s,f){
   const auto = !!note || flagged || sc!=null || !!comp;
   const showNote = noteOverride.has(k) ? noteOverride.get(k) : auto;
   return `<div class="field" data-field="${k}">
-    <div class="field-label"><span>${esc(f.label)}</span>${flagged?'<span class="flagtag">Finding</span>':''}</div>
+    <div class="field-label"><span>${esc(f.label)}</span>${flagged?'<span class="flagtag">Finding</span>':(nonEmpty(note)&&noteTypeOf(s,k)==='finding'?'<span class="nbadge finding">Finding note</span>':'')}</div>
     ${body}
     ${showNote?`<div class="fnote">
         <div class="fnote-head"><button type="button" class="link" data-a="hidenote" data-id="${k}">Collapse note</button></div>
         <textarea class="inp note" data-note="${k}" rows="2" placeholder="${flagged?'What is not in order?':'Note'}">${esc(note)}</textarea>
+        ${typeButtons('notetype',k,noteTypeOf(s,k))}
         <div class="fn-row">
           <div class="opts fn-comp">
             <button data-a="pickcompliance" data-id="${k}" data-v="Compliant" aria-pressed="${comp==='Compliant'}">Compliant</button>
@@ -1279,7 +1341,7 @@ function rerenderField(s,id){ const row=document.querySelector(`[data-field="${i
 function refreshStats(){
   const s=cur(); if(!s||view.name!=='edit') return; const v=verdict(s);
   const st=$('#ovStamp'); st.dataset.s=v.k; st.textContent=v.t; $('#ovWord').textContent=v.w;
-  $('#progTxt').textContent=`${doneCount(s)} of ${TOTAL} items filled in`;
+  $('#progTxt').innerHTML=progHTML(s); const ft=$('#forceTxt'); if(ft) ft.innerHTML=forceHTML(s);
   $('#progBar').style.width=doneCount(s)/TOTAL*100+'%';
   $('#chips').innerHTML=chipsHTML(s);
   SECTIONS.forEach(sec=>{ const el=document.querySelector(`[data-meta="${sec.id}"]`); if(el) el.innerHTML=metaHTML(s,sec); });
@@ -1290,10 +1352,54 @@ function refreshStats(){
   }
 }
 
+let newNoteType='fyi';
+function noteCardHTML(s,n){
+  const head=n.kind==='field'
+    ? `<span><span class="nbadge ${n.type}">${typeLabel(n.type)}</span><b>${esc(n.label)}</b>${n.flagged?' <span class="hint">· answer is a finding</span>':''}</span><button type="button" class="link" data-a="openfield" data-id="${n.id}">Open question</button>`
+    : `<span><span class="nbadge ${n.type}">${typeLabel(n.type)}</span><b>Own note</b></span><button type="button" class="link" data-a="delfreenote" data-id="${n.id}">Delete</button>`;
+  const body=n.kind==='field'
+    ? `<textarea class="inp note" data-note="${n.id}" rows="2">${esc(n.text)}</textarea>${typeButtons('notetype',n.id,n.type)}`
+    : `<textarea class="inp" data-freenote="${n.id}" rows="2">${esc(n.text)}</textarea>${typeButtons('freetype',n.id,n.type)}
+       <label class="f">Category<select class="inp" data-freecat="${n.id}">
+         <option value="" ${n.auto?'selected':''}>Automatic (now: ${esc(catName(autoCat(n.text)))})</option>
+         ${SECTIONS.map(sec=>`<option value="${sec.id}" ${!n.auto&&n.sec===sec.id?'selected':''}>${esc(sec.name)}</option>`).join('')}
+       </select></label>`;
+  return `<div class="notecard" data-card="${n.kind}:${n.id}"><div class="nmeta">${head}</div>${body}</div>`;
+}
+function renderNotes(){
+  const s=cur(); if(!s){view={name:'home'};return render();}
+  s.freeNotes=(s.freeNotes||[]).filter(n=>nonEmpty(n.text));
+  setBar(`<button class="icon-btn" data-a="back-edit" aria-label="Back to survey">←</button><h1>Notes</h1>`);
+  const all=allNotes(s), nF=all.filter(n=>n.type==='finding').length;
+  $('#app').innerHTML=`
+    <section class="panel">
+      <h2>New note</h2>
+      <textarea class="inp" id="newNoteText" data-newnote="1" rows="3" placeholder="Type your note…"></textarea>
+      <div class="opts fn-type" role="group" aria-label="Note type" id="newNoteType">
+        <button type="button" data-a="newtype" data-v="fyi" aria-pressed="${newNoteType==='fyi'}">FYI</button>
+        <button type="button" data-a="newtype" data-v="finding" aria-pressed="${newNoteType==='finding'}">Finding</button></div>
+      <label class="f">Category<select class="inp" id="newNoteCat" data-newnotecat="1">
+        <option value="">Automatic</option>${SECTIONS.map(sec=>`<option value="${sec.id}">${esc(sec.name)}</option>`).join('')}</select></label>
+      <p class="hint" id="newNoteHint">Leave on Automatic and the note is filed under the right category based on its text.</p>
+      <button type="button" class="btn primary wide" style="margin-top:10px" data-a="addnote">Save note</button>
+    </section>
+    <section class="panel"><p class="hint">${all.length} note${all.length===1?'':'s'} · ${nF} finding${nF===1?'':'s'} · ${all.length-nF} FYI. A finding is worth reporting, but does not by itself make the hotel non-compliant.</p></section>
+    ${all.length?SECTIONS.map(sec=>{ const ns=all.filter(n=>n.sec===sec.id); if(!ns.length) return '';
+      return `<section class="panel"><h2>${esc(sec.name)} <span class="hint">(${ns.length})</span></h2>${ns.map(n=>noteCardHTML(s,n)).join('')}</section>`; }).join('')
+      :`<section class="panel"><p class="hint">No notes yet. Add one above, or use “+ note” at any question.</p></section>`}`;
+  setDock(`<button type="button" class="btn" data-a="back-edit" style="flex:1">Back to survey</button>`);
+}
+function openField(s,id){
+  view={name:'edit',id:s.id}; render();
+  const f=FIELD[id]; if(!f) return;
+  const head=document.querySelector(`#sec-${f.sec} .cat-head`), body=head?.nextElementSibling;
+  if(body?.hidden){ body.hidden=false; head.setAttribute('aria-expanded','true'); }
+  setTimeout(()=>document.querySelector(`[data-field="${id}"]`)?.scrollIntoView({behavior:'smooth',block:'center'}),50);
+}
 function renderReport(){
   const s=cur(); if(!s){view={name:'home'};return render();}
   setBar(`<button class="icon-btn" data-a="back-edit" aria-label="Back to survey">←</button><h1>Report</h1>`);
-  const v=verdict(s), fl=flags(s), avg=avgScore(s);
+  const v=verdict(s), fl=flags(s), avg=avgScore(s), nFind=extraNotes(s,'finding'), nFyi=extraNotes(s,'fyi');
   if(!s.recip) s.recip={groups:[],extra:''};
   const groups = S.groups.length ? S.groups.map(g=>`
     <label class="check"><input type="checkbox" data-grp="${g.id}" ${s.recip.groups.includes(g.id)?'checked':''}>
@@ -1304,14 +1410,17 @@ function renderReport(){
     <section class="panel">
       <div class="summary"><span class="stamp big" data-s="${v.k}">${v.t}</span>
       <div class="txt"><b>${esc(title(s))}</b><p class="hint">${esc([s.city,dateNL(s.date),s.reps,s.inspector].filter(Boolean).join(', '))}</p>
-      <p class="hint">${v.w} · ${doneCount(s)} of ${TOTAL} items filled in${avg!=null?` · Avg. score ${avg.toFixed(1)}/10`:''}</p></div></div>
+      <p class="hint">${v.w} · ${doneCount(s)} of ${TOTAL} items filled in${avg!=null?` · Avg. score ${avg.toFixed(1)}/10`:''}${s.stayed?' · 🛏 Stayed overnight':''}</p>
+      ${forcedDone(s)?`<p class="hint"><b>Completed without all questions:</b> ${esc(s.completeOverride.reason)}</p>`:''}</div></div>
       <div class="bars">${SECTIONS.map(sec=>{const d=doneCount(s,sec.fields),n=sec.fields.filter(f=>isFlag(s,f)).length,cv=sectionCompliance(s,sec);
         return `<div class="barrow"><span>${sec.name}</span><span class="track"><i style="width:${d/reqFields(sec.fields).length*100}%;background:${n?'var(--s2)':'var(--accent)'}"></i></span><b style="color:${cv==='Non-compliant'?'var(--s1)':cv==='Compliant'?'var(--s5)':'var(--muted)'}">${cv==='Not assessed'?d+'/'+reqFields(sec.fields).length:cv}</b></div>`}).join('')}</div>
     </section>
     <section class="panel"><h2>Findings</h2>
-      ${fl.length?`<ul class="lowlist">${fl.map(f=>`<li><b>${esc(f.label)}</b>: ${esc(valueText(s,f))}${s.notes[f.id]?' - '+esc(s.notes[f.id]):''}</li>`).join('')}</ul>`:'<p class="hint">No findings.</p>'}
+      ${(fl.length||nFind.length)?`<ul class="lowlist">${fl.map(f=>`<li><b>${esc(f.label)}</b>: ${esc(valueText(s,f))}${s.notes[f.id]?' - '+esc(s.notes[f.id]):''}</li>`).join('')}${nFind.map(n=>`<li><b>${esc(n.label)}</b>: ${esc(n.text)}</li>`).join('')}</ul>`:'<p class="hint">No findings.</p>'}
+      ${nFind.length?`<p class="hint" style="margin-top:8px">Findings from notes are reported, but do not by themselves make the hotel non-compliant.</p>`:''}
       ${missing.length?`<p class="hint" style="margin-top:12px">Still empty: ${esc(missing.map(f=>f.label).join(', '))}</p>`:''}
     </section>
+    ${nFyi.length?`<section class="panel"><h2>FYI notes</h2><ul class="lowlist">${nFyi.map(n=>`<li><b>${esc(n.label)}</b>: ${esc(n.text)}</li>`).join('')}</ul></section>`:''}
     <section class="panel">
       <h2>Recipients</h2>
       ${groups}
@@ -1577,7 +1686,7 @@ function renderTrip(){
           <button class="survey-row" data-a="open" data-id="${s.id}">
             <span class="stamp" data-s="${v.k}" aria-label="${v.w}">${v.t}</span>
             <span class="t"><b>${esc(title(s))}</b>
-              <span>${esc([s.city,dateNL(s.date)].filter(Boolean).join(', '))} · ${v.w}</span>
+              <span>${esc([s.city,dateNL(s.date)].filter(Boolean).join(', '))} · ${v.w}${s.stayed?' · 🛏 Stayed here':''}${forcedDone(s)?' · Ended early':''}</span>
               <span class="status ${s.status==='verzonden'?'sent':''}">${s.status==='verzonden'?'Sent':'Draft'}</span></span>
           </button>
         </div>`}).join('') : `<p class="hint">No surveys yet in this trip.</p>`}
@@ -1696,6 +1805,36 @@ document.addEventListener('click', async e=>{
   else if(a==='open'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'edit',id:b.dataset.id}; render(); }
   else if(a==='swipedelete'){ const sv=S.surveys.find(x=>x.id===b.dataset.id); if(sv && confirm(`Delete survey "${title(sv)}"?`)){ pendingDeletes.surveys.push(sv.id); S.surveys=S.surveys.filter(x=>x.id!==sv.id); persist(); render(); toast('Survey deleted'); } else closeSwipes(); }
   else if(a==='report'){view={name:'report',id:s.id};render();}
+  else if(a==='notes'){view={name:'notes',id:s.id};render();}
+  else if(a==='showmissing'){ missingOnly=true; missingFor=s.id; view={name:'edit',id:s.id}; render(); }
+  else if(a==='showall'){ missingOnly=false; render(); }
+  else if(a==='forcecomplete'){
+    showModal(`<h2>Finish without answering everything</h2>
+      <p>Use this when the survey stops early, for example when you walk in and see right away that this hotel will not work. Open questions are then no longer required, and the report says why.</p>
+      <div class="opts" role="group" id="fcOpts" style="flex-wrap:wrap;margin-top:12px">${COMPLETE_REASONS.map(r=>`<button type="button" data-a="fcreason" data-v="${esc(r)}" aria-pressed="false">${esc(r)}</button>`).join('')}</div>
+      <label class="f">Explanation (shown in the report)<textarea class="inp" id="fcText" rows="3" placeholder="e.g. Rooms far below standard, no blackout at all"></textarea></label>
+      <div class="actions" style="margin-top:12px">
+        <button type="button" class="btn primary" data-a="fcconfirm">Mark as complete</button>
+        <button type="button" class="btn" data-a="modalcancel">Cancel</button></div>`); }
+  else if(a==='fcreason'){ document.querySelectorAll('#fcOpts button').forEach(x=>x.setAttribute('aria-pressed',String(x===b))); }
+  else if(a==='fcconfirm'){ const pick=document.querySelector('#fcOpts button[aria-pressed="true"]')?.dataset.v||''; const txt=($('#fcText')?.value||'').trim();
+    if(!pick && !txt){ toast('Choose a reason or type an explanation.'); return; }
+    const reason=[pick==='Other'?'':pick, txt].filter(Boolean).join(': ')||txt;
+    s.completeOverride={reason, at:Date.now()}; touch(s); hideModal(); refreshStats(); toast('Survey marked as complete'); }
+  else if(a==='undoforce'){ s.completeOverride=null; touch(s); refreshStats(); }
+  else if(a==='openfield'){ openField(s,b.dataset.id); }
+  else if(a==='notetype'||a==='freetype'){ const id=b.dataset.id, v=b.dataset.v;
+    if(a==='notetype'){ s.noteType=s.noteType||{}; s.noteType[id]=v; } else { const n=(s.freeNotes||[]).find(x=>x.id===id); if(n) n.type=v; }
+    touch(s);
+    if(view.name==='edit' && a==='notetype'){ rerenderField(s,id); }
+    else { b.closest('.fn-type').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.v===v)));
+      const badge=b.closest('.notecard')?.querySelector('.nbadge'); if(badge){ badge.className='nbadge '+v; badge.textContent=typeLabel(v); } } }
+  else if(a==='newtype'){ newNoteType=b.dataset.v; b.closest('.fn-type').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.v===newNoteType))); }
+  else if(a==='addnote'){ const text=$('#newNoteText').value.trim(); if(!text){ toast('Type a note first.'); return; }
+    const cat=$('#newNoteCat').value; s.freeNotes=s.freeNotes||[];
+    s.freeNotes.push({id:uid(),text,type:newNoteType,cat,created:Date.now()}); touch(s);
+    newNoteType='fyi'; renderNotes(); toast(`Saved as ${typeLabel(s.freeNotes[s.freeNotes.length-1].type)} under ${catName(cat||autoCat(text))}`); }
+  else if(a==='delfreenote'){ if(confirm('Delete this note?')){ s.freeNotes=(s.freeNotes||[]).filter(x=>x.id!==b.dataset.id); touch(s); renderNotes(); } }
   else if(a==='back-edit'){view={name:'edit',id:s.id};render();}
   else if(a==='delete'){ if(confirm(`Delete survey "${title(s)}"?`)){ pendingDeletes.surveys.push(s.id); S.surveys=S.surveys.filter(x=>x.id!==s.id); persist(); view={name:'trip',id:s.tripId}; render(); toast('Survey deleted'); } }
   else if(a==='sharesurvey'){
@@ -1841,7 +1980,13 @@ document.addEventListener('input', e=>{
     box.innerHTML=matches.map(m=>`<button type="button" data-a="pickta" data-id="${d.ta}" data-v="${esc(m)}">${esc(m)}</button>`).join('');
     box.hidden=!matches.length; }
   else if(d.tagadd){ const val=el.value; if(val){ const arr=s.f[d.tagadd]||[]; if(!arr.includes(val)) s.f[d.tagadd]=[...arr,val]; touch(s); rerenderField(s,d.tagadd.split('.')[0]); refreshStats(); } }
-  else if(d.note){ s.notes[d.note]=el.value; touch(s); }
+  else if(d.note){ const had=nonEmpty(s.notes[d.note]); s.notes[d.note]=el.value; touch(s);
+    if(view.name==='edit' && had!==nonEmpty(el.value)){ $('#chips').innerHTML=chipsHTML(s); setDock(editDockHTML(s)); } }
+  else if(d.freenote){ const n=(s.freeNotes||[]).find(x=>x.id===d.freenote); if(n){ n.text=el.value; touch(s);
+    const sel=document.querySelector(`[data-freecat="${n.id}"]`); if(sel && sel.options[0]) sel.options[0].textContent=`Automatic (now: ${catName(autoCat(n.text))})`; } }
+  else if(d.freecat){ const n=(s.freeNotes||[]).find(x=>x.id===d.freecat); if(n){ n.cat=el.value; touch(s); renderNotes(); toast(`Moved to ${catName(n.cat||autoCat(n.text))}`); } }
+  else if(d.newnote||d.newnotecat){ const t=$('#newNoteText').value, c=$('#newNoteCat').value, h=$('#newNoteHint');
+    if(h) h.textContent = c ? `Will be saved under ${catName(c)}.` : (t.trim()?`Will be filed automatically under ${catName(autoCat(t))}.`:'Leave on Automatic and the note is filed under the right category based on its text.'); }
   else if(d.photolabel){ const p=s.photos.find(x=>x.id===d.photolabel); if(p){ p.label=el.value; touch(s); } }
   else if(d.datepart){ const [y,m,dd]=(s.date||today()).split('-'); const parts={y,m,d:dd}; parts[d.datepart]=el.value; s.date=`${parts.y}-${parts.m}-${parts.d}`; touch(s); }
   else if(d.top){
@@ -1880,6 +2025,7 @@ document.addEventListener('change', async e=>{
   if(el.dataset.set==='autoSavePhotos'){ S.autoSavePhotos=el.checked; persist(); }
   if(el.dataset.set==='autoAirQuality'){ S.autoAirQuality=el.checked; persist(); }
   if(el.dataset.grp){ const id=el.dataset.grp; s.recip.groups = el.checked ? [...new Set([...s.recip.groups,id])] : s.recip.groups.filter(x=>x!==id); touch(s); }
+  if(el.dataset.stayed){ s.stayed=el.checked; touch(s); }
   if(el.dataset.hours24){ const k=el.dataset.hours24; s.f[k]=el.checked; touch(s); rerenderField(s,k.split('.')[0]); }
   if(el.dataset.photo && el.files?.length){
     const defLabel=el.dataset.photoLabel||'';
@@ -1926,11 +2072,12 @@ function recipients(s){
 const caoText = s=>s.f.cao==='Yes'?'Yes':s.f.cao==='No'?'No':'Not assessed';
 function subject(s){ return `Pillow Report ${title(s)}${s.city?' ('+s.city+')':''} - ${dateNL(s.date)}`; }
 function mailBody(s){
-  const fl=flags(s);
+  const fl=flags(s), nFind=extraNotes(s,'finding'), nFyi=extraNotes(s,'fyi'), tot=fl.length+nFind.length;
   const lines=[`Pillow Report: ${title(s)}${s.city?' ('+s.city+')':''}`,
     `Date: ${dateNL(s.date)}${surveyedBy(s)?' | Surveyed by: '+surveyedBy(s):''}`,
-    `CAO compliant: ${caoText(s)}`, '',
-    fl.length?`Findings (${fl.length}):`:'Findings: none', ...fl.map(f=>`- ${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`)];
+    `CAO compliant: ${caoText(s)}`, ...(s.stayed?['Stayed overnight in this hotel: Yes']:[]), ...(forcedDone(s)?[`Survey ended early: ${s.completeOverride.reason}`]:[]), '',
+    tot?`Findings (${tot}):`:'Findings: none', ...fl.map(f=>`- ${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`), ...nFind.map(n=>`- ${n.label}: ${n.text}`)];
+  if(nFyi.length) lines.push('',`FYI (${nFyi.length}):`,...nFyi.map(n=>`- ${n.label}: ${n.text}`));
   if(nonEmpty(s.f.otherInfo)) lines.push('','Other information:',s.f.otherInfo);
   lines.push('','The full survey report is attached as PDF.');
   return lines.join('\n');
@@ -2030,10 +2177,10 @@ function makePdf(s,mapDataUrl){
   setF(18,'bold',[255,255,255]); doc.text(wrap(title(s),CW-40,18)[0],M,22);
   setF(9,'normal',[200,212,228]); doc.text([s.city,dateNL(s.date),surveyedBy(s)?'Surveyed by '+surveyedBy(s):''].filter(Boolean).join('   |   '),M,30);
   // Verdict
-  const fl=flags(s); const vc = s.f.cao==='No'?RED : fl.length?AMBER : s.f.cao==='Yes'?GREEN : MUTED;
+  const fl=flags(s), nFind=extraNotes(s,'finding'), nFyi=extraNotes(s,'fyi'); const vc = s.f.cao==='No'?RED : fl.length?AMBER : s.f.cao==='Yes'?GREEN : MUTED;
   y=44; doc.setFillColor(...vc); doc.roundedRect(M,y,CW,16,2,2,'F');
   setF(12,'bold',[255,255,255]); doc.text(`CAO compliant: ${caoText(s)}`,M+5,y+10);
-  doc.text(`${fl.length} finding${fl.length===1?'':'s'}`,W-M-5,y+10,{align:'right'});
+  doc.text(`${fl.length+nFind.length} finding${fl.length+nFind.length===1?'':'s'}`,W-M-5,y+10,{align:'right'});
   y=64;
   const avg=avgScore(s);
   if(avg!=null){ setF(11,'bold',INK); doc.text(`Average score: ${avg.toFixed(1)} / 10`,M,y); y+=10; } else y+=4;
@@ -2041,7 +2188,8 @@ function makePdf(s,mapDataUrl){
     const L=wrap(label,LW,9.5), V=wrap(val||'-',VW,9.5); const h=Math.max(L.length,V.length)*4.6+2.4;
     ensure(h); setF(9.5,bold?'bold':'normal',MUTED); doc.text(L,M,y+4);
     setF(9.5,red?'bold':'normal',red?RED:(val?INK:MUTED)); doc.text(V,VX,y+4); y+=h; };
-  row('Hotel name',s.hotel); row('City code',s.city); row('Hodaco Rep',s.reps); row('NI Rep',s.inspector);
+  if(forcedDone(s)){ const L=wrap(`Survey ended early: ${s.completeOverride.reason}`,CW,10); ensure(L.length*5+2); setF(10,'bold',AMBER); doc.text(L,M,y); y+=L.length*5+3; }
+  row('Hotel name',s.hotel); row('City code',s.city); row('Hodaco Rep',s.reps); row('NI Rep',s.inspector); row('Stayed overnight',s.stayed?'Yes':'No');
   // Map: hotel location and route to the airport
   if(mapDataUrl){
     const mapW=CW, mapH=mapW*320/640;
@@ -2055,9 +2203,13 @@ function makePdf(s,mapDataUrl){
     }catch(e){}
   }
   // Findings summary
-  if(fl.length){ y+=4; ensure(12); setF(12,'bold'); doc.text('Findings',M,y+4); y+=8;
-    fl.forEach(f=>{ const L=wrap(`${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`,CW-6,9.5); ensure(L.length*4.6+2);
-      doc.setFillColor(...RED); doc.circle(M+1.2,y+2.8,1,'F'); setF(9.5,'normal'); doc.text(L,M+5,y+4); y+=L.length*4.6+1.5; }); }
+  const bullet=(text,col)=>{ const L=wrap(text,CW-6,9.5); ensure(L.length*4.6+2);
+      doc.setFillColor(...col); doc.circle(M+1.2,y+2.8,1,'F'); setF(9.5,'normal'); doc.text(L,M+5,y+4); y+=L.length*4.6+1.5; };
+  if(fl.length||nFind.length){ y+=4; ensure(12); setF(12,'bold'); doc.text('Findings',M,y+4); y+=8;
+    fl.forEach(f=>bullet(`${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`,RED));
+    nFind.forEach(n=>bullet(`${n.label}: ${n.text}`,AMBER)); }
+  if(nFyi.length){ y+=4; ensure(12); setF(12,'bold'); doc.text('FYI',M,y+4); y+=8;
+    nFyi.forEach(n=>bullet(`${n.label}: ${n.text}`,MUTED)); }
   // Sections
   SECTIONS.forEach(sec=>{
     y+=5; ensure(16); doc.setDrawColor(213,221,230); doc.line(M,y,W-M,y); y+=7;
@@ -2067,8 +2219,9 @@ function makePdf(s,mapDataUrl){
     sec.fields.forEach(f=>{
       if(f.id==='otherInfo') return;
       row(f.label, valueText(s,f), {red:isFlag(s,f)});
-      if(s.notes[f.id]){ const N=wrap(s.notes[f.id],VW,8.5); ensure(N.length*4+1); setF(8.5,'italic',MUTED); doc.text(N,VX,y+2.5); y+=N.length*4+1.5; }
+      if(s.notes[f.id]){ const N=wrap(`${typeLabel(noteTypeOf(s,f.id))}: ${s.notes[f.id]}`,VW,8.5); ensure(N.length*4+1); setF(8.5,'italic',MUTED); doc.text(N,VX,y+2.5); y+=N.length*4+1.5; }
     });
+    allNotes(s).filter(n=>n.kind==='free'&&n.sec===sec.id).forEach(n=>row(`Note (${typeLabel(n.type)})`,n.text));
   });
   if(nonEmpty(s.f.otherInfo)){ y+=5; ensure(16); doc.line(M,y,W-M,y); y+=7; setF(12,'bold'); doc.text('Other information',M,y); y+=6;
     wrap(s.f.otherInfo,CW,10).forEach(l=>{ ensure(5); setF(10); doc.text(l,M,y); y+=5; }); }
@@ -2317,7 +2470,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='3.5.0';
+const APP_VERSION='3.7.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2350,25 +2503,28 @@ function rtfEsc(text){
 }
 const RTF_HEAD='{\\rtf1\\ansi\\ansicpg1252\\deff0\n{\\fonttbl{\\f0\\fswiss Calibri;}}\n{\\colortbl;\\red19\\green35\\blue58;\\red31\\green122\\blue92;\\red194\\green65\\blue59;\\red91\\green107\\blue128;\\red136\\green136\\blue136;}\n\\f0\n';
 function makeWordRtf(s){
-  const fl=flags(s), avg=avgScore(s);
+  const fl=flags(s), avg=avgScore(s), nFind=extraNotes(s,'finding'), nFyi=extraNotes(s,'fyi');
   let body='';
   body+=`{\\pard\\sa120\\fs32\\b\\cf1 ${rtfEsc(title(s))}\\par}\n`;
   body+=`{\\pard\\sa160\\fs20 ${rtfEsc([s.city,dateNL(s.date),s.reps,s.inspector].filter(Boolean).join(', '))}\\par}\n`;
-  const capLine=`CAO compliant: ${caoText(s)}   |   ${fl.length} finding${fl.length===1?'':'s'}${avg!=null?`   |   Average score: ${avg.toFixed(1)}/10`:''}`;
+  const capLine=`CAO compliant: ${caoText(s)}   |   ${fl.length+nFind.length} finding${fl.length+nFind.length===1?'':'s'}${avg!=null?`   |   Average score: ${avg.toFixed(1)}/10`:''}`;
   body+=`{\\pard\\sa200\\fs20\\b ${rtfEsc(capLine)}\\par}\n`;
+  if(s.stayed) body+=`{\\pard\\sa120\\fs20 Stayed overnight in this hotel: Yes\\par}\n`;
+  if(forcedDone(s)) body+=`{\\pard\\sa200\\fs20\\b Survey ended early: ${rtfEsc(s.completeOverride.reason)}\\par}\n`;
   body+=`{\\pard\\sa100\\fs24\\b\\cf1 Findings\\par}\n`;
-  if(fl.length) fl.forEach(f=>{
-    const line=`${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`;
-    body+=`{\\pard\\li240\\sa60\\fs20 \\u8226? ${rtfEsc(line)}\\par}\n`;
-  }); else body+=`{\\pard\\sa200\\fs20 No findings.\\par}\n`;
+  const rtfBullet=line=>{ body+=`{\\pard\\li240\\sa60\\fs20 \\u8226? ${rtfEsc(line)}\\par}\n`; };
+  if(fl.length||nFind.length){ fl.forEach(f=>rtfBullet(`${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`)); nFind.forEach(n=>rtfBullet(`${n.label}: ${n.text}`)); }
+  else body+=`{\\pard\\sa200\\fs20 No findings.\\par}\n`;
+  if(nFyi.length){ body+=`{\\pard\\sb120\\sa100\\fs24\\b\\cf1 FYI\\par}\n`; nFyi.forEach(n=>rtfBullet(`${n.label}: ${n.text}`)); }
   SECTIONS.forEach(sec=>{
     const cv=sectionCompliance(s,sec); const cIdx=cv==='Non-compliant'?3:cv==='Compliant'?2:4;
     body+=`{\\pard\\sb200\\sa100\\fs24\\b\\cf1 ${rtfEsc(sec.name)}  \\fs18\\b0\\cf${cIdx} (${rtfEsc(cv)})\\par}\n`;
     sec.fields.forEach(f=>{
       if(f.id==='otherInfo') return;
-      const flagged=isFlag(s,f), val=valueText(s,f)||'-', note=s.notes[f.id]?` (${s.notes[f.id]})`:'';
+      const flagged=isFlag(s,f), val=valueText(s,f)||'-', note=s.notes[f.id]?` (${typeLabel(noteTypeOf(s,f.id))}: ${s.notes[f.id]})`:'';
       body+=`{\\pard\\sa60\\fs20${flagged?'\\cf3\\b':''} ${rtfEsc(f.label)}: ${rtfEsc(val)}${rtfEsc(note)}\\par}\n`;
     });
+    allNotes(s).filter(n=>n.kind==='free'&&n.sec===sec.id).forEach(n=>{ body+=`{\\pard\\sa60\\fs20\\i Note (${typeLabel(n.type)}): ${rtfEsc(n.text)}\\par}\n`; });
   });
   if(nonEmpty(s.f.otherInfo)){
     body+=`{\\pard\\sb200\\sa100\\fs24\\b\\cf1 Other information\\par}\n`;
