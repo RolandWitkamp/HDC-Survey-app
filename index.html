@@ -1475,7 +1475,7 @@ function renderSettings(){
     <section class="panel"><h2>Your name</h2>
       <label class="f">Default Hodaco Rep in new surveys<input data-set="defRep" value="${esc(S.defaultRep)}"></label></section>
     <section class="panel"><h2>Feedback</h2>
-      <p class="hint">Something not working, or an idea to make the app better? Write it here. Tapping Send opens your mail app with everything filled in; you just tap send there.</p>
+      <p class="hint">Something not working, or an idea to make the app better? Write it here. It goes straight to the app maker, together with the app version and device, so we can look into it.</p>
       <div class="opts" role="group" id="fbType" style="margin-top:10px">${['Idea','Something is broken','Other'].map((t,i)=>`<button type="button" data-a="fbtype" data-v="${t}" aria-pressed="${i===0}">${t}</button>`).join('')}</div>
       <label class="f">Your feedback<textarea class="inp" id="fbText" rows="4" placeholder="What happened, or what would you like to see?"></textarea></label>
       <button type="button" class="btn primary wide" style="margin-top:10px" data-a="sendfeedback">Send feedback</button>
@@ -2154,16 +2154,35 @@ function mailBody(s){
   lines.push('','The full survey report is attached as PDF.');
   return lines.join('\n');
 }
-const FEEDBACK_TO='rgwitkamp@gmail.com';
-function sendFeedback(){
-  const text=($('#fbText')?.value||'').trim(); if(!text) return toast('Type your feedback first.');
+/* Feedback goes to the Edge Function "send-feedback", which stores it in Supabase and mails it to the
+   app owner. Offline or failed sends wait in a local queue and are retried with every sync. */
+let feedbackQueue=null;
+async function loadFeedbackQueue(){ if(!feedbackQueue) feedbackQueue=(await store.get('feedbackQueue'))||[]; return feedbackQueue; }
+async function flushFeedback(){
+  await loadFeedbackQueue();
+  if(!sb || !sbUser || !navigator.onLine || !feedbackQueue.length) return {sent:0,left:feedbackQueue.length};
+  let sent=0;
+  for(const fb of [...feedbackQueue]){
+    try{ const {data,error}=await sb.functions.invoke('send-feedback',{body:fb});
+      if(error || !data?.ok) break;
+      feedbackQueue=feedbackQueue.filter(x=>x.id!==fb.id); sent++; }catch(e){ break; }
+  }
+  await store.set('feedbackQueue',feedbackQueue);
+  return {sent,left:feedbackQueue.length};
+}
+async function sendFeedback(){
+  const el=$('#fbText'); const text=(el?.value||'').trim(); if(!text) return toast('Type your feedback first.');
   const type=document.querySelector('#fbType button[aria-pressed="true"]')?.dataset.v||'Other';
-  const who=[sbUsername, sbUser?.email].filter(Boolean).join(' / ');
-  const body=[text,'','---',`Type: ${type}`,`From: ${who||'unknown'}`,`App version: ${APP_VERSION}`,`Device: ${navigator.userAgent}`].join('\n');
-  const a=document.createElement('a');
-  a.href=`mailto:${FEEDBACK_TO}?subject=${encodeURIComponent(`Pillow Report feedback: ${type}`)}&body=${encodeURIComponent(body)}`;
-  a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove();
-  toast('Mail opened. Tap send in your mail app.');
+  await loadFeedbackQueue();
+  feedbackQueue.push({id:uid(),type,message:text.slice(0,5000),username:sbUsername||'',appVersion:APP_VERSION,device:navigator.userAgent,createdAt:Date.now()});
+  await store.set('feedbackQueue',feedbackQueue);
+  if(el) el.value='';
+  const btn=document.querySelector('[data-a="sendfeedback"]'); if(btn){ btn.disabled=true; btn.textContent='Sending…'; }
+  const r=await flushFeedback();
+  if(btn){ btn.disabled=false; btn.textContent='Send feedback'; }
+  if(r.sent && !r.left) toast('Thanks! Your feedback has been sent.');
+  else if(!navigator.onLine) toast('Saved. It will be sent automatically when you are back online.');
+  else toast('Saved, but sending failed for now. It will be retried automatically.');
 }
 function openMail(s){
   const {to,cc}=recipients(s);
@@ -2568,7 +2587,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='3.10.0';
+const APP_VERSION='3.11.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2793,6 +2812,7 @@ async function syncNow(){
   if(syncing || !sb || !sbUser || !navigator.onLine) return;
   syncing=true;
   try{ await pushDirty(); await pullRemote(); }catch(e){}
+  try{ await flushFeedback(); }catch(e){}
   syncing=false;
 }
 // Photo bytes never go through the surveys table (that's what caused the earlier
