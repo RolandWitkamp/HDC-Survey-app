@@ -206,6 +206,10 @@ textarea{resize:vertical;min-height:72px}
 .stamp[data-s="ok"]{background:var(--s5)}.stamp[data-s="warn"]{background:var(--s2)}.stamp[data-s="bad"]{background:var(--s1)}
 .nbadge{display:inline-block;font-size:.72rem;font-weight:700;border-radius:99px;padding:2px 8px;margin-right:6px;vertical-align:middle;background:var(--soft);color:var(--ink)}
 .nbadge.finding{background:var(--s2);color:#fff}
+.nbadge.noncompliant{background:var(--s1);color:#fff}
+.nbadge.none{background:transparent;border:1px solid var(--s1);color:var(--s1)}
+.typewarn{color:var(--s1)!important;font-weight:600;margin-top:4px}
+.typewarn[hidden]{display:none}
 .notecard{border-top:1px solid var(--line);padding:12px 0}
 .notecard:first-of-type{border-top:0;padding-top:4px}
 .notecard .nmeta{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:.9rem;margin-bottom:6px}
@@ -213,6 +217,11 @@ textarea{resize:vertical;min-height:72px}
 .fn-type{margin-top:8px}
 .chips button.notes-chip{background:var(--accent);color:#fff}
 .chips button.notes-chip b{color:#fff}
+.dock-ico svg{width:22px;height:22px;display:block}
+.chip-ico svg{width:14px;height:14px;vertical-align:-2px;margin-right:5px}
+.drag-handle{flex:none;align-self:stretch;display:flex;align-items:center;justify-content:center;width:44px;margin:-14px -16px -14px 0;color:var(--muted);touch-action:none;cursor:grab}
+.swipe-row.dragging{z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.18);border-radius:14px}
+.swipe-row.shift{transition:transform .15s}
 .dock-badge{position:absolute;top:-6px;right:-6px;background:var(--accent);color:#fff;font-size:11px;line-height:1;padding:3px 6px;border-radius:9px;font-weight:700}
 </style>
 </head>
@@ -238,6 +247,8 @@ const ICON={
   collapse:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11l5-5 5 5"/><path d="M7 18l5-5 5 5"/></svg>',
   share:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v14"/></svg>',
   image:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>',
+  note:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+  grip:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 8h14"/><path d="M5 12h14"/><path d="M5 16h14"/></svg>',
   logout:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>'
 };
 const NI_REPS=['Aibar','Snijders','Ten Hove'];
@@ -455,6 +466,11 @@ function deleteTrip(trip){
   return true;
 }
 const title = s=>s.hotel||'Unnamed hotel';
+/* Surveys of a trip in the order the user dragged them into; surveys never placed yet come first, newest on top */
+const tripSurveysOf = trip=>S.surveys.filter(s=>s.tripId===trip.id).sort((a,b)=>{
+  const ao=a.order??null, bo=b.order??null;
+  if(ao===null && bo===null) return (b.updated||0)-(a.updated||0);
+  if(ao===null) return -1; if(bo===null) return 1; return ao-bo; });
 const surveyedBy = s=>[s.reps,s.inspector].filter(Boolean).join(' & ');
 const nonEmpty = v=>Array.isArray(v)?v.length>0:(v!=null&&String(v).trim()!=='');
 
@@ -489,8 +505,16 @@ function autoCat(text){
     if(n>score){ score=n; best=sec.id; } });
   return best; }
 const catName = id=>(SECTIONS.find(x=>x.id===id)||{name:'General'}).name;
-const noteTypeOf = (s,k)=>s.noteType?.[k] || (FIELD[k] && isFlag(s,FIELD[k]) ? 'finding' : 'fyi');
-const typeLabel = t=>t==='finding'?'Finding':'FYI';
+/* A note's type must be chosen by hand. Older notes marked Non-compliant via the former Compliant/Non-compliant
+   buttons count as type Non-compliant. */
+const noteTypeOf = (s,k)=>s.noteType?.[k] || (s.compliance?.[k]==='Non-compliant' ? 'noncompliant' : null);
+const typeLabel = t=>({fyi:'FYI',finding:'Finding',noncompliant:'Non-compliant'})[t]||'No type yet';
+const ncFreeNotes = s=>(s.freeNotes||[]).filter(n=>nonEmpty(n.text) && n.type==='noncompliant');
+/* Every non-compliant item: answers that are a finding by the CAO, fields marked non-compliant, and non-compliant notes */
+function ncList(s){
+  return [...nonCompliantFields(s).map(f=>({id:f.id,sec:f.sec,label:f.label,text:[valueText(s,f),s.notes?.[f.id]].filter(nonEmpty).join(' - ')})),
+          ...ncFreeNotes(s).map(n=>{ const sec=n.cat||autoCat(n.text); return {id:n.id,sec,label:catName(sec),text:n.text}; })]; }
+const unclassifiedNotes = s=>allNotes(s).filter(n=>!n.type);
 /* Survey marked complete on purpose while questions are still open (e.g. hotel rejected on arrival) */
 const forcedDone = s=>!!(s.completeOverride && s.completeOverride.reason);
 const COMPLETE_REASONS=['Hotel rejected on arrival','Survey could not be completed on site','Other'];
@@ -502,10 +526,12 @@ function allNotes(s){
     out.push({kind:'free',id:n.id,sec,label:catName(sec),text:n.text,type:n.type||'fyi',auto:!n.cat,flagged:false}); });
   return out; }
 /* Notes that are not already shown with a flagged answer in the findings list */
-const extraNotes = (s,type)=>allNotes(s).filter(n=>n.type===type && !n.flagged);
-const typeButtons = (act,id,t)=>`<div class="opts fn-type" role="group" aria-label="Note type">
+const extraNotes = (s,type)=>{ const nc=new Set(nonCompliantFields(s).map(f=>f.id)); return allNotes(s).filter(n=>n.type===type && !(n.kind==='field' && nc.has(n.id))); };
+const typeButtons = (act,id,t,showWarn)=>`<div class="opts fn-type" role="group" aria-label="Note type">
   <button type="button" data-a="${act}" data-id="${id}" data-v="fyi" aria-pressed="${t==='fyi'}">FYI</button>
-  <button type="button" data-a="${act}" data-id="${id}" data-v="finding" aria-pressed="${t==='finding'}">Finding</button></div>`;
+  <button type="button" data-a="${act}" data-id="${id}" data-v="finding" aria-pressed="${t==='finding'}">Finding</button>
+  <button type="button" data-a="${act}" data-id="${id}" data-v="noncompliant" aria-pressed="${t==='noncompliant'}" class="bad">Non-compliant</button></div>
+  <p class="hint typewarn" data-typewarn="${id}" ${showWarn?'':'hidden'}>Required: choose FYI, Finding or Non-compliant for this note.</p>`;
 const doneCount = (s,fs=ALL)=>reqFields(fs).filter(f=>filled(s,f)).length;
 function verdict(s){ const c=s.f.cao, n=flags(s).length;
   if(c==='No') return {k:'bad', t:'!', w:'Not CAO-compliant'};
@@ -513,11 +539,9 @@ function verdict(s){ const c=s.f.cao, n=flags(s).length;
   if(c==='Yes') return {k:'ok', t:'✓', w:'CAO-compliant'};
   return {k:'0', t:'–', w:'CAO not yet assessed'}; }
 function avgScore(s){ const vals=Object.values(s.scores||{}).filter(v=>v!=null); return vals.length? vals.reduce((a,b)=>a+b,0)/vals.length : null; }
-function sectionCompliance(s,sec){ const vals=sec.fields.map(f=>s.compliance?.[f.id]).filter(Boolean);
-  if(vals.includes('Non-compliant')) return 'Non-compliant';
-  if(vals.includes('Compliant')) return 'Compliant';
-  if(sec.fields.some(f=>isFlag(s,f))) return 'Not assessed';
-  return 'Compliant'; }
+function sectionCompliance(s,sec){
+  if(sec.id==='verdict') return s.f.cao==='No'?'Non-compliant':s.f.cao==='Yes'?'Compliant':'Not assessed';
+  return ncList(s).some(x=>x.sec===sec.id) ? 'Non-compliant' : 'Compliant'; }
 
 const sliderText = (f,val)=>`${val}% ${f.left} · ${100-val}% ${f.right}`;
 
@@ -563,9 +587,12 @@ function setBar(html){
 function setDock(html){ const d=$('#dock'); if(!html){d.hidden=true;return;} d.hidden=false; $('#dockIn').innerHTML=html; }
 function editDockHTML(s){
   const remaining=TOTAL-doneCount(s);
-  const ready=remaining<=0||forcedDone(s);
-  return `<button class="btn ${ready?'primary':''}" data-a="${ready?'report':'showmissing'}" style="flex:1">${ready?'Report & share':`${remaining} item${remaining===1?'':'s'} left · show`}</button>
-    <button type="button" class="btn dock-photo-btn" data-a="notes" aria-label="Notes" style="font-size:1.3rem">📝${allNotes(s).length?`<span class="dock-badge">${allNotes(s).length}</span>`:''}</button>
+  const ready=remaining<=0||forcedDone(s), uc=unclassifiedNotes(s).length;
+  if(ready && uc) return `<button class="btn" data-a="notes" style="flex:1;color:var(--s1)">Give ${uc} note${uc===1?'':'s'} a type first</button>
+    <button type="button" class="btn dock-photo-btn" data-a="notes" aria-label="Notes"><span class="dock-ico">${ICON.note}</span></button>
+    <label class="btn dock-photo-btn" aria-label="Add photo">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
+  return `<button class="btn ${ready?'primary':''}" data-a="${ready?'report':'showmissing'}" style="flex:1">${ready?'Report & share':`${remaining} item${remaining===1?'':'s'} left`}</button>
+    <button type="button" class="btn dock-photo-btn" data-a="notes" aria-label="Notes"><span class="dock-ico">${ICON.note}</span>${allNotes(s).length?`<span class="dock-badge">${allNotes(s).length}</span>`:''}</button>
     <label class="btn dock-photo-btn" aria-label="Add photo">+<input type="file" accept="image/*" multiple data-photo="1"></label>`;
 }
 function render(){ window.scrollTo(0,0);
@@ -734,7 +761,7 @@ function renderHome(){
 }
 
 function progHTML(s){ const left=TOTAL-doneCount(s);
-  return left>0 ? `<button type="button" class="link" data-a="${missingOnly?'showall':'showmissing'}" style="padding:0;text-align:left">${progLabel(s)} · ${missingOnly?'show all questions':`show the ${left} open question${left===1?'':'s'}`}</button>` : progLabel(s); }
+  return left>0 ? `<button type="button" class="link" data-a="${missingOnly?'showall':'showmissing'}" style="padding:0;text-align:left">${progLabel(s)}</button>` : progLabel(s); }
 function forceHTML(s){
   if(forcedDone(s)) return `<b>Marked as complete:</b> ${esc(s.completeOverride.reason)} · <button type="button" class="link" data-a="undoforce" style="padding:0">Undo</button>`;
   return TOTAL-doneCount(s)>0 ? `<button type="button" class="link" data-a="forcecomplete" style="padding:0">Finish without answering everything…</button>` : ''; }
@@ -813,7 +840,7 @@ function renderEdit(){
   if(!s.f.driveTime) scheduleDriveTimeLookup(s);
   if(s.photos.some(p=>!p.data)) ensurePhotosData(s.photos).then(()=>{ if(view.name==='edit' && view.id===s.id) refreshPhotosUI(s); });
 }
-function chipsHTML(s){ return `<button type="button" data-a="notes" class="notes-chip">📝 Notes<b>${allNotes(s).length}</b></button>`+SECTIONS.map(sec=>{ const n=sec.fields.filter(f=>isFlag(s,f)).length;
+function chipsHTML(s){ return `<button type="button" data-a="notes" class="notes-chip"><span class="chip-ico">${ICON.note}</span>Notes<b>${allNotes(s).length}</b></button>`+SECTIONS.map(sec=>{ const n=sec.fields.filter(f=>isFlag(s,f)).length;
   return `<button type="button" data-a="jumpsec" data-id="${sec.id}" class="${n?'has-flag':''}">${sec.name}<b>${n?'! '+n:doneCount(s,sec.fields)+'/'+reqFields(sec.fields).length}</b></button>`; }).join(''); }
 function metaHTML(s,sec){ const n=sec.fields.filter(f=>isFlag(s,f)).length;
   return `${doneCount(s,sec.fields)}/${reqFields(sec.fields).length}${n?` · <span class="fl">${n} finding${n>1?'s':''}</span>`:''}`; }
@@ -931,13 +958,13 @@ function fieldHTML(s,f){
   if(f.extra) body+=`<label class="f">${f.extra}<input data-k="${k}.extra" value="${esc(s.f[k+'.extra'])}"></label>`;
   if(f.standard) body+=`<details class="standard"><summary>Details</summary><p>${esc(f.standard)}</p></details>`;
   if(f.id==='cao'){
-    const nc=nonCompliantFields(s);
+    const nc=ncList(s);
     let msg;
     if(s.caoAuto===false) msg=`Manually set. <button type="button" class="link" data-a="caoauto">Back to automatic</button>`;
-    else if(nc.length) msg=`Automatically set to No based on ${nc.length} finding${nc.length===1?'':'s'}.`;
+    else if(nc.length) msg=`Automatically set to No based on ${nc.length} non-compliant item${nc.length===1?'':'s'}.`;
     else msg=`No findings yet. Tap Yes above once you want to confirm the survey as compliant.`;
     body+=`<p class="hint" style="margin-top:8px">${msg}</p>`;
-    if(nc.length) body+=`<ul class="lowlist">${nc.map(nf=>`<li><b>${esc(nf.label)}</b>: ${esc(valueText(s,nf))}${s.notes[nf.id]?' — '+esc(s.notes[nf.id]):''}</li>`).join('')}</ul>`;
+    if(nc.length) body+=`<ul class="lowlist">${nc.map(x=>`<li><b>${esc(x.label)}</b>: ${esc(x.text)}</li>`).join('')}</ul>`;
   }
   if(f.id==='driveTime'){
     let msg;
@@ -973,18 +1000,12 @@ function fieldHTML(s,f){
   const auto = !!note || flagged || sc!=null || !!comp;
   const showNote = noteOverride.has(k) ? noteOverride.get(k) : auto;
   return `<div class="field" data-field="${k}">
-    <div class="field-label"><span>${esc(f.label)}</span>${flagged?'<span class="flagtag">Finding</span>':(nonEmpty(note)&&noteTypeOf(s,k)==='finding'?'<span class="nbadge finding">Finding note</span>':'')}</div>
+    <div class="field-label"><span>${esc(f.label)}</span>${flagged?'<span class="flagtag">Finding</span>':!nonEmpty(note)?'':noteTypeOf(s,k)==='noncompliant'?'<span class="flagtag">Non-compliant</span>':noteTypeOf(s,k)==='finding'?'<span class="nbadge finding">Finding note</span>':!noteTypeOf(s,k)?'<span class="nbadge none">Note needs a type</span>':''}</div>
     ${body}
     ${showNote?`<div class="fnote">
         <div class="fnote-head"><button type="button" class="link" data-a="hidenote" data-id="${k}">Collapse note</button></div>
         <textarea class="inp note" data-note="${k}" rows="2" placeholder="${flagged?'What is not in order?':'Note'}">${esc(note)}</textarea>
-        ${typeButtons('notetype',k,noteTypeOf(s,k))}
-        <div class="fn-row">
-          <div class="opts fn-comp">
-            <button data-a="pickcompliance" data-id="${k}" data-v="Compliant" aria-pressed="${comp==='Compliant'}">Compliant</button>
-            <button data-a="pickcompliance" data-id="${k}" data-v="Non-compliant" aria-pressed="${comp==='Non-compliant'}" class="bad">Non-compliant</button>
-          </div>
-        </div>
+        ${typeButtons('notetype',k,noteTypeOf(s,k),nonEmpty(note)&&!noteTypeOf(s,k))}
       </div>`
       :`<button class="link" data-a="note" data-id="${k}">+ note</button>`}
   </div>`;
@@ -1352,14 +1373,14 @@ function refreshStats(){
   }
 }
 
-let newNoteType='fyi';
+let newNoteType=null;
 function noteCardHTML(s,n){
   const head=n.kind==='field'
-    ? `<span><span class="nbadge ${n.type}">${typeLabel(n.type)}</span><b>${esc(n.label)}</b>${n.flagged?' <span class="hint">· answer is a finding</span>':''}</span><button type="button" class="link" data-a="openfield" data-id="${n.id}">Open question</button>`
-    : `<span><span class="nbadge ${n.type}">${typeLabel(n.type)}</span><b>Own note</b></span><button type="button" class="link" data-a="delfreenote" data-id="${n.id}">Delete</button>`;
+    ? `<span><span class="nbadge ${n.type||'none'}">${typeLabel(n.type)}</span><b>${esc(n.label)}</b>${n.flagged?' <span class="hint">· answer is a finding</span>':''}</span><button type="button" class="link" data-a="openfield" data-id="${n.id}">Open question</button>`
+    : `<span><span class="nbadge ${n.type||'none'}">${typeLabel(n.type)}</span><b>Own note</b></span><button type="button" class="link" data-a="delfreenote" data-id="${n.id}">Delete</button>`;
   const body=n.kind==='field'
-    ? `<textarea class="inp note" data-note="${n.id}" rows="2">${esc(n.text)}</textarea>${typeButtons('notetype',n.id,n.type)}`
-    : `<textarea class="inp" data-freenote="${n.id}" rows="2">${esc(n.text)}</textarea>${typeButtons('freetype',n.id,n.type)}
+    ? `<textarea class="inp note" data-note="${n.id}" rows="2">${esc(n.text)}</textarea>${typeButtons('notetype',n.id,n.type,!n.type)}`
+    : `<textarea class="inp" data-freenote="${n.id}" rows="2">${esc(n.text)}</textarea>${typeButtons('freetype',n.id,n.type,!n.type)}
        <label class="f">Category<select class="inp" data-freecat="${n.id}">
          <option value="" ${n.auto?'selected':''}>Automatic (now: ${esc(catName(autoCat(n.text)))})</option>
          ${SECTIONS.map(sec=>`<option value="${sec.id}" ${!n.auto&&n.sec===sec.id?'selected':''}>${esc(sec.name)}</option>`).join('')}
@@ -1370,20 +1391,23 @@ function renderNotes(){
   const s=cur(); if(!s){view={name:'home'};return render();}
   s.freeNotes=(s.freeNotes||[]).filter(n=>nonEmpty(n.text));
   setBar(`<button class="icon-btn" data-a="back-edit" aria-label="Back to survey">←</button><h1>Notes</h1>`);
-  const all=allNotes(s), nF=all.filter(n=>n.type==='finding').length;
+  const all=allNotes(s), nF=all.filter(n=>n.type==='finding').length, nNC=all.filter(n=>n.type==='noncompliant').length, nU=all.filter(n=>!n.type).length;
   $('#app').innerHTML=`
     <section class="panel">
       <h2>New note</h2>
       <textarea class="inp" id="newNoteText" data-newnote="1" rows="3" placeholder="Type your note…"></textarea>
       <div class="opts fn-type" role="group" aria-label="Note type" id="newNoteType">
         <button type="button" data-a="newtype" data-v="fyi" aria-pressed="${newNoteType==='fyi'}">FYI</button>
-        <button type="button" data-a="newtype" data-v="finding" aria-pressed="${newNoteType==='finding'}">Finding</button></div>
+        <button type="button" data-a="newtype" data-v="finding" aria-pressed="${newNoteType==='finding'}">Finding</button>
+        <button type="button" data-a="newtype" data-v="noncompliant" aria-pressed="${newNoteType==='noncompliant'}" class="bad">Non-compliant</button></div>
+      <p class="hint">Required: is this FYI, a Finding, or Non-compliant? Non-compliant notes make the survey non-compliant.</p>
       <label class="f">Category<select class="inp" id="newNoteCat" data-newnotecat="1">
         <option value="">Automatic</option>${SECTIONS.map(sec=>`<option value="${sec.id}">${esc(sec.name)}</option>`).join('')}</select></label>
       <p class="hint" id="newNoteHint">Leave on Automatic and the note is filed under the right category based on its text.</p>
       <button type="button" class="btn primary wide" style="margin-top:10px" data-a="addnote">Save note</button>
     </section>
-    <section class="panel"><p class="hint">${all.length} note${all.length===1?'':'s'} · ${nF} finding${nF===1?'':'s'} · ${all.length-nF} FYI. A finding is worth reporting, but does not by itself make the hotel non-compliant.</p></section>
+    <section class="panel"><p class="hint">${all.length} note${all.length===1?'':'s'} · ${nNC} non-compliant · ${nF} finding${nF===1?'':'s'} · ${all.length-nF-nNC-nU} FYI. A finding is worth reporting but does not make the hotel non-compliant; a non-compliant note does.</p>
+      ${nU?`<p class="typewarn" style="margin-top:8px">${nU} note${nU===1?' still needs':'s still need'} a type (marked in red below). The report can't be made until every note has one.</p>`:''}</section>
     ${all.length?SECTIONS.map(sec=>{ const ns=all.filter(n=>n.sec===sec.id); if(!ns.length) return '';
       return `<section class="panel"><h2>${esc(sec.name)} <span class="hint">(${ns.length})</span></h2>${ns.map(n=>noteCardHTML(s,n)).join('')}</section>`; }).join('')
       :`<section class="panel"><p class="hint">No notes yet. Add one above, or use “+ note” at any question.</p></section>`}`;
@@ -1399,7 +1423,7 @@ function openField(s,id){
 function renderReport(){
   const s=cur(); if(!s){view={name:'home'};return render();}
   setBar(`<button class="icon-btn" data-a="back-edit" aria-label="Back to survey">←</button><h1>Report</h1>`);
-  const v=verdict(s), fl=flags(s), avg=avgScore(s), nFind=extraNotes(s,'finding'), nFyi=extraNotes(s,'fyi');
+  const v=verdict(s), fl=flags(s), avg=avgScore(s), nFind=extraNotes(s,'finding'), nFyi=extraNotes(s,'fyi'), nc=ncList(s);
   if(!s.recip) s.recip={groups:[],extra:''};
   const groups = S.groups.length ? S.groups.map(g=>`
     <label class="check"><input type="checkbox" data-grp="${g.id}" ${s.recip.groups.includes(g.id)?'checked':''}>
@@ -1415,9 +1439,12 @@ function renderReport(){
       <div class="bars">${SECTIONS.map(sec=>{const d=doneCount(s,sec.fields),n=sec.fields.filter(f=>isFlag(s,f)).length,cv=sectionCompliance(s,sec);
         return `<div class="barrow"><span>${sec.name}</span><span class="track"><i style="width:${d/reqFields(sec.fields).length*100}%;background:${n?'var(--s2)':'var(--accent)'}"></i></span><b style="color:${cv==='Non-compliant'?'var(--s1)':cv==='Compliant'?'var(--s5)':'var(--muted)'}">${cv==='Not assessed'?d+'/'+reqFields(sec.fields).length:cv}</b></div>`}).join('')}</div>
     </section>
+    <section class="panel"><h2>Non-compliant</h2>
+      ${nc.length?`<ul class="lowlist">${nc.map(x=>`<li><b>${esc(x.label)}</b>: ${esc(x.text)}</li>`).join('')}</ul>`:'<p class="hint">Nothing non-compliant.</p>'}
+    </section>
     <section class="panel"><h2>Findings</h2>
-      ${(fl.length||nFind.length)?`<ul class="lowlist">${fl.map(f=>`<li><b>${esc(f.label)}</b>: ${esc(valueText(s,f))}${s.notes[f.id]?' - '+esc(s.notes[f.id]):''}</li>`).join('')}${nFind.map(n=>`<li><b>${esc(n.label)}</b>: ${esc(n.text)}</li>`).join('')}</ul>`:'<p class="hint">No findings.</p>'}
-      ${nFind.length?`<p class="hint" style="margin-top:8px">Findings from notes are reported, but do not by themselves make the hotel non-compliant.</p>`:''}
+      ${nFind.length?`<ul class="lowlist">${nFind.map(n=>`<li><b>${esc(n.label)}</b>: ${esc(n.text)}</li>`).join('')}</ul>`:'<p class="hint">No findings.</p>'}
+      ${nFind.length?`<p class="hint" style="margin-top:8px">Findings are reported, but do not make the hotel non-compliant.</p>`:''}
       ${missing.length?`<p class="hint" style="margin-top:12px">Still empty: ${esc(missing.map(f=>f.label).join(', '))}</p>`:''}
     </section>
     ${nFyi.length?`<section class="panel"><h2>FYI notes</h2><ul class="lowlist">${nFyi.map(n=>`<li><b>${esc(n.label)}</b>: ${esc(n.text)}</li>`).join('')}</ul></section>`:''}
@@ -1447,6 +1474,12 @@ function renderSettings(){
   $('#app').innerHTML = `
     <section class="panel"><h2>Your name</h2>
       <label class="f">Default Hodaco Rep in new surveys<input data-set="defRep" value="${esc(S.defaultRep)}"></label></section>
+    <section class="panel"><h2>Feedback</h2>
+      <p class="hint">Something not working, or an idea to make the app better? Write it here. Tapping Send opens your mail app with everything filled in; you just tap send there.</p>
+      <div class="opts" role="group" id="fbType" style="margin-top:10px">${['Idea','Something is broken','Other'].map((t,i)=>`<button type="button" data-a="fbtype" data-v="${t}" aria-pressed="${i===0}">${t}</button>`).join('')}</div>
+      <label class="f">Your feedback<textarea class="inp" id="fbText" rows="4" placeholder="What happened, or what would you like to see?"></textarea></label>
+      <button type="button" class="btn primary wide" style="margin-top:10px" data-a="sendfeedback">Send feedback</button>
+    </section>
     <section class="panel"><h2>Hotel address</h2>
       <label class="f" style="display:flex;align-items:center;gap:10px;margin-top:0">
         <input type="checkbox" data-set="autoAddress" ${S.autoAddress?'checked':''} style="width:20px;height:20px;margin:0;accent-color:var(--accent)">
@@ -1647,14 +1680,14 @@ function renderDocs(){
 }
 
 function syncTripHotelNames(trip){
-  const names=S.surveys.filter(s=>s.tripId===trip.id && (s.hotel||'').trim()).map(s=>s.hotel.trim());
+  const names=tripSurveysOf(trip).filter(s=>(s.hotel||'').trim()).map(s=>s.hotel.trim());
   const missing=[...new Set(names)].filter(name=>!trip.summary.includes(name));
   if(missing.length){ trip.summary=(trip.summary?trip.summary.replace(/\s+$/,'')+'\n\n':'')+missing.map(n=>n+':').join('\n\n'); trip.updated=Date.now(); persist(); }
 }
 function renderTrip(){
   const trip=curTrip(); if(!trip){ view={name:'home'}; return render(); }
   syncTripHotelNames(trip);
-  const tripSurveys=[...S.surveys.filter(s=>s.tripId===trip.id)].sort((a,b)=>(b.updated||0)-(a.updated||0));
+  const tripSurveys=tripSurveysOf(trip);
   setBar(`<button class="icon-btn" data-a="home" aria-label="Back">←</button><h1>${esc(tripCityLabel(trip)||'Untitled trip')}</h1><button class="icon-btn" data-a="exportsummary" aria-label="Export">${ICON.share}</button>`);
   $('#app').innerHTML = `
     <section class="panel">
@@ -1680,16 +1713,17 @@ function renderTrip(){
     </section>
     <section class="panel">
       <h2>Surveys in this trip</h2>
-      ${tripSurveys.length ? tripSurveys.map(s=>{ const v=verdict(s); return `
-        <div class="swipe-row">
+      <div id="tripSurveyList">${tripSurveys.length ? tripSurveys.map(s=>{ const v=verdict(s); return `
+        <div class="swipe-row" data-sid="${s.id}">
           <button class="swipe-del" data-a="swipedelete" data-id="${s.id}" aria-label="Delete survey">${ICON.trash}<span>Delete</span></button>
           <button class="survey-row" data-a="open" data-id="${s.id}">
             <span class="stamp" data-s="${v.k}" aria-label="${v.w}">${v.t}</span>
             <span class="t"><b>${esc(title(s))}</b>
               <span>${esc([s.city,dateNL(s.date)].filter(Boolean).join(', '))} · ${v.w}${s.stayed?' · 🛏 Stayed here':''}${forcedDone(s)?' · Ended early':''}</span>
               <span class="status ${s.status==='verzonden'?'sent':''}">${s.status==='verzonden'?'Sent':'Draft'}</span></span>
+            ${tripSurveys.length>1?`<span class="drag-handle" data-drag="${s.id}" aria-label="Drag to reorder">${ICON.grip}</span>`:''}
           </button>
-        </div>`}).join('') : `<p class="hint">No surveys yet in this trip.</p>`}
+        </div>`}).join('') : `<p class="hint">No surveys yet in this trip.</p>`}</div>
       <button class="btn wide" style="margin-top:14px" data-a="newsurvey">+ Add survey</button>
     </section>
     <section class="panel">
@@ -1710,8 +1744,40 @@ function renderTrip(){
 /* ---------- Swipe to delete (home list) ---------- */
 const SWIPE_W=88;
 let swipe=null, suppressClick=false;
+let dragSv=null;
+document.addEventListener('pointerdown', e=>{
+  const h=e.target.closest('.drag-handle'); if(!h) return;
+  e.preventDefault(); e.stopPropagation();
+  const wrap=h.closest('.swipe-row'), list=[...document.querySelectorAll('#tripSurveyList .swipe-row')];
+  const rects=list.map(r=>r.getBoundingClientRect()), from=list.indexOf(wrap);
+  try{ h.setPointerCapture(e.pointerId); }catch(_){}
+  wrap.classList.add('dragging');
+  list.forEach(r=>{ if(r!==wrap) r.classList.add('shift'); });
+  dragSv={h,wrap,list,rects,from,to:from,startY:e.clientY,step:rects.length>1?rects[1].top-rects[0].top:rects[0].height+10};
+});
+document.addEventListener('pointermove', e=>{
+  if(!dragSv) return; e.preventDefault();
+  const d=dragSv, dy=e.clientY-d.startY, c=d.rects[d.from].top+d.rects[d.from].height/2+dy;
+  let to=0; d.rects.forEach((r,i)=>{ if(c>r.top+r.height/2) to=i; }); if(c<d.rects[0].top+d.rects[0].height/2) to=0;
+  d.to=Math.max(0,Math.min(d.list.length-1,to));
+  d.wrap.style.transform=`translateY(${dy}px)`;
+  d.list.forEach((r,i)=>{ if(r===d.wrap) return;
+    r.style.transform = (i>d.from && i<=d.to) ? `translateY(${-d.step}px)` : (i<d.from && i>=d.to) ? `translateY(${d.step}px)` : ''; });
+}, {passive:false});
+function endSurveyDrag(){
+  if(!dragSv) return; const d=dragSv; dragSv=null;
+  suppressClick=true; setTimeout(()=>suppressClick=false,350);
+  d.list.forEach(r=>{ r.style.transform=''; r.classList.remove('dragging','shift'); });
+  if(d.to===d.from) return;
+  const ids=d.list.map(r=>r.dataset.sid); const [m]=ids.splice(d.from,1); ids.splice(d.to,0,m);
+  ids.forEach((id,i)=>{ const sv=S.surveys.find(x=>x.id===id); if(sv && sv.order!==i){ sv.order=i; sv.updated=Date.now(); } });
+  persist(); renderTrip();
+}
+document.addEventListener('pointerup', endSurveyDrag);
+document.addEventListener('pointercancel', endSurveyDrag);
 function closeSwipes(){ document.querySelectorAll('.swipe-row.open').forEach(w=>{ w.classList.remove('open'); w.querySelector('.survey-row').style.transform=''; }); }
 function swipeStart(x,y,target){
+  if(target.closest('.drag-handle')) return;
   const row=target.closest('.survey-row'); const wrap=row?.closest('.swipe-row'); if(!wrap) return;
   document.querySelectorAll('.swipe-row.open').forEach(w=>{ if(w!==wrap){ w.classList.remove('open'); w.querySelector('.survey-row').style.transform=''; } });
   const wasOpen=wrap.classList.contains('open');
@@ -1804,8 +1870,10 @@ document.addEventListener('click', async e=>{
   else if(a==='savesurvey'){ doManualSave('Survey'); }
   else if(a==='open'){ const wrap=b.closest('.swipe-row'); if(wrap?.classList.contains('open')){ closeSwipes(); return; } view={name:'edit',id:b.dataset.id}; render(); }
   else if(a==='swipedelete'){ const sv=S.surveys.find(x=>x.id===b.dataset.id); if(sv && confirm(`Delete survey "${title(sv)}"?`)){ pendingDeletes.surveys.push(sv.id); S.surveys=S.surveys.filter(x=>x.id!==sv.id); persist(); render(); toast('Survey deleted'); } else closeSwipes(); }
-  else if(a==='report'){view={name:'report',id:s.id};render();}
+  else if(a==='report'){ const uc=unclassifiedNotes(s).length; if(uc){ toast(`${uc} note${uc===1?'':'s'} still need${uc===1?'s':''} a type (FYI, Finding or Non-compliant).`); view={name:'notes',id:s.id}; render(); return; } view={name:'report',id:s.id};render();}
   else if(a==='notes'){view={name:'notes',id:s.id};render();}
+  else if(a==='fbtype'){ document.querySelectorAll('#fbType button').forEach(x=>x.setAttribute('aria-pressed',String(x===b))); }
+  else if(a==='sendfeedback'){ sendFeedback(); }
   else if(a==='showmissing'){ missingOnly=true; missingFor=s.id; view={name:'edit',id:s.id}; render(); }
   else if(a==='showall'){ missingOnly=false; render(); }
   else if(a==='forcecomplete'){
@@ -1824,16 +1892,18 @@ document.addEventListener('click', async e=>{
   else if(a==='undoforce'){ s.completeOverride=null; touch(s); refreshStats(); }
   else if(a==='openfield'){ openField(s,b.dataset.id); }
   else if(a==='notetype'||a==='freetype'){ const id=b.dataset.id, v=b.dataset.v;
-    if(a==='notetype'){ s.noteType=s.noteType||{}; s.noteType[id]=v; } else { const n=(s.freeNotes||[]).find(x=>x.id===id); if(n) n.type=v; }
+    if(a==='notetype'){ s.noteType=s.noteType||{}; s.noteType[id]=v; if(s.compliance) delete s.compliance[id]; } else { const n=(s.freeNotes||[]).find(x=>x.id===id); if(n) n.type=v; }
     touch(s);
-    if(view.name==='edit' && a==='notetype'){ rerenderField(s,id); }
+    if(view.name==='edit' && a==='notetype'){ rerenderField(s,id); refreshStats(); }
     else { b.closest('.fn-type').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.v===v)));
+      document.querySelectorAll(`[data-typewarn="${id}"]`).forEach(w=>w.hidden=true);
       const badge=b.closest('.notecard')?.querySelector('.nbadge'); if(badge){ badge.className='nbadge '+v; badge.textContent=typeLabel(v); } } }
   else if(a==='newtype'){ newNoteType=b.dataset.v; b.closest('.fn-type').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.v===newNoteType))); }
   else if(a==='addnote'){ const text=$('#newNoteText').value.trim(); if(!text){ toast('Type a note first.'); return; }
+    if(!newNoteType){ toast('Choose FYI, Finding or Non-compliant first.'); return; }
     const cat=$('#newNoteCat').value; s.freeNotes=s.freeNotes||[];
     s.freeNotes.push({id:uid(),text,type:newNoteType,cat,created:Date.now()}); touch(s);
-    newNoteType='fyi'; renderNotes(); toast(`Saved as ${typeLabel(s.freeNotes[s.freeNotes.length-1].type)} under ${catName(cat||autoCat(text))}`); }
+    newNoteType=null; renderNotes(); toast(`Saved as ${typeLabel(s.freeNotes[s.freeNotes.length-1].type)} under ${catName(cat||autoCat(text))}`); }
   else if(a==='delfreenote'){ if(confirm('Delete this note?')){ s.freeNotes=(s.freeNotes||[]).filter(x=>x.id!==b.dataset.id); touch(s); renderNotes(); } }
   else if(a==='back-edit'){view={name:'edit',id:s.id};render();}
   else if(a==='delete'){ if(confirm(`Delete survey "${title(s)}"?`)){ pendingDeletes.surveys.push(s.id); S.surveys=S.surveys.filter(x=>x.id!==s.id); persist(); view={name:'trip',id:s.tripId}; render(); toast('Survey deleted'); } }
@@ -1981,6 +2051,7 @@ document.addEventListener('input', e=>{
     box.hidden=!matches.length; }
   else if(d.tagadd){ const val=el.value; if(val){ const arr=s.f[d.tagadd]||[]; if(!arr.includes(val)) s.f[d.tagadd]=[...arr,val]; touch(s); rerenderField(s,d.tagadd.split('.')[0]); refreshStats(); } }
   else if(d.note){ const had=nonEmpty(s.notes[d.note]); s.notes[d.note]=el.value; touch(s);
+    document.querySelectorAll(`[data-typewarn="${d.note}"]`).forEach(w=>w.hidden=!(nonEmpty(el.value)&&!noteTypeOf(s,d.note)));
     if(view.name==='edit' && had!==nonEmpty(el.value)){ $('#chips').innerHTML=chipsHTML(s); setDock(editDockHTML(s)); } }
   else if(d.freenote){ const n=(s.freeNotes||[]).find(x=>x.id===d.freenote); if(n){ n.text=el.value; touch(s);
     const sel=document.querySelector(`[data-freecat="${n.id}"]`); if(sel && sel.options[0]) sel.options[0].textContent=`Automatic (now: ${catName(autoCat(n.text))})`; } }
@@ -2040,10 +2111,10 @@ document.addEventListener('change', async e=>{
     if(await shareP){ added.forEach(p=>p.savedToLibrary=true); touch(s); }
   }
 });
-function nonCompliantFields(s){ return ALL.filter(f=>f.id!=='cao' && (isFlag(s,f) || s.compliance?.[f.id]==='Non-compliant')); }
+function nonCompliantFields(s){ return ALL.filter(f=>f.id!=='cao' && (isFlag(s,f) || s.compliance?.[f.id]==='Non-compliant' || (nonEmpty(s.notes?.[f.id]) && s.noteType?.[f.id]==='noncompliant'))); }
 function updateCaoAuto(s){
   if(s.caoAuto===false) return false;
-  const bad=nonCompliantFields(s).length>0;
+  const bad=nonCompliantFields(s).length>0 || ncFreeNotes(s).length>0;
   if(bad && s.f.cao!=='No'){ s.f.cao='No'; return true; }
   if(!bad && s.f.cao==='No'){ delete s.f.cao; return true; }
   return false;
@@ -2072,15 +2143,27 @@ function recipients(s){
 const caoText = s=>s.f.cao==='Yes'?'Yes':s.f.cao==='No'?'No':'Not assessed';
 function subject(s){ return `Pillow Report ${title(s)}${s.city?' ('+s.city+')':''} - ${dateNL(s.date)}`; }
 function mailBody(s){
-  const fl=flags(s), nFind=extraNotes(s,'finding'), nFyi=extraNotes(s,'fyi'), tot=fl.length+nFind.length;
+  const nc=ncList(s), nFind=extraNotes(s,'finding'), nFyi=extraNotes(s,'fyi');
   const lines=[`Pillow Report: ${title(s)}${s.city?' ('+s.city+')':''}`,
     `Date: ${dateNL(s.date)}${surveyedBy(s)?' | Surveyed by: '+surveyedBy(s):''}`,
     `CAO compliant: ${caoText(s)}`, ...(s.stayed?['Stayed overnight in this hotel: Yes']:[]), ...(forcedDone(s)?[`Survey ended early: ${s.completeOverride.reason}`]:[]), '',
-    tot?`Findings (${tot}):`:'Findings: none', ...fl.map(f=>`- ${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`), ...nFind.map(n=>`- ${n.label}: ${n.text}`)];
+    nc.length?`Non-compliant (${nc.length}):`:'Non-compliant: none', ...nc.map(x=>`- ${x.label}: ${x.text}`)];
+  if(nFind.length) lines.push('',`Findings (${nFind.length}):`,...nFind.map(n=>`- ${n.label}: ${n.text}`));
   if(nFyi.length) lines.push('',`FYI (${nFyi.length}):`,...nFyi.map(n=>`- ${n.label}: ${n.text}`));
   if(nonEmpty(s.f.otherInfo)) lines.push('','Other information:',s.f.otherInfo);
   lines.push('','The full survey report is attached as PDF.');
   return lines.join('\n');
+}
+const FEEDBACK_TO='rgwitkamp@gmail.com';
+function sendFeedback(){
+  const text=($('#fbText')?.value||'').trim(); if(!text) return toast('Type your feedback first.');
+  const type=document.querySelector('#fbType button[aria-pressed="true"]')?.dataset.v||'Other';
+  const who=[sbUsername, sbUser?.email].filter(Boolean).join(' / ');
+  const body=[text,'','---',`Type: ${type}`,`From: ${who||'unknown'}`,`App version: ${APP_VERSION}`,`Device: ${navigator.userAgent}`].join('\n');
+  const a=document.createElement('a');
+  a.href=`mailto:${FEEDBACK_TO}?subject=${encodeURIComponent(`Pillow Report feedback: ${type}`)}&body=${encodeURIComponent(body)}`;
+  a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove();
+  toast('Mail opened. Tap send in your mail app.');
 }
 function openMail(s){
   const {to,cc}=recipients(s);
@@ -2163,7 +2246,16 @@ async function getHotelMapDataUrl(s){
   const code=(s.city||'').trim(); if(code.length!==3) return null;
   const airports=await loadAirportsData(); const airport=airports?findAirportByIata(airports,code):null;
   if(!airport||airport.lat==null||airport.lon==null) return null;
-  return await fetchMapImageDataUrl(staticMapUrl(s.hotelLat,s.hotelLon,airport.lat,airport.lon,s.driveRoutePolyline));
+  const [main,zoom]=await Promise.all([
+    fetchMapImageDataUrl(staticMapUrl(s.hotelLat,s.hotelLon,airport.lat,airport.lon,s.driveRoutePolyline)),
+    fetchMapImageDataUrl(staticMapZoomUrl(s.hotelLat,s.hotelLon))]);
+  return main ? {main,zoom} : null;
+}
+/* Close-up of the hotel's surroundings, printed as an inset on the route map */
+function staticMapZoomUrl(lat,lon){
+  const params=['size=320x320','scale=2','maptype=roadmap','format=png','zoom=16',`center=${lat},${lon}`,
+    `markers=color:0x0EA5E9|label:H|${lat},${lon}`,`key=${encodeURIComponent(S.googleMapsKey)}`];
+  return `https://maps.googleapis.com/maps/api/staticmap?${params.join('&')}`;
 }
 function makePdf(s,mapDataUrl){
   if(!window.jspdf) throw new Error('nolib');
@@ -2177,10 +2269,10 @@ function makePdf(s,mapDataUrl){
   setF(18,'bold',[255,255,255]); doc.text(wrap(title(s),CW-40,18)[0],M,22);
   setF(9,'normal',[200,212,228]); doc.text([s.city,dateNL(s.date),surveyedBy(s)?'Surveyed by '+surveyedBy(s):''].filter(Boolean).join('   |   '),M,30);
   // Verdict
-  const fl=flags(s), nFind=extraNotes(s,'finding'), nFyi=extraNotes(s,'fyi'); const vc = s.f.cao==='No'?RED : fl.length?AMBER : s.f.cao==='Yes'?GREEN : MUTED;
+  const fl=flags(s), nFind=extraNotes(s,'finding'), nFyi=extraNotes(s,'fyi'), nc=ncList(s), ncIds=new Set(nonCompliantFields(s).map(f=>f.id)); const vc = s.f.cao==='No'?RED : fl.length?AMBER : s.f.cao==='Yes'?GREEN : MUTED;
   y=44; doc.setFillColor(...vc); doc.roundedRect(M,y,CW,16,2,2,'F');
   setF(12,'bold',[255,255,255]); doc.text(`CAO compliant: ${caoText(s)}`,M+5,y+10);
-  doc.text(`${fl.length+nFind.length} finding${fl.length+nFind.length===1?'':'s'}`,W-M-5,y+10,{align:'right'});
+  doc.text(`${nc.length} non-compliant · ${nFind.length} finding${nFind.length===1?'':'s'}`,W-M-5,y+10,{align:'right'});
   y=64;
   const avg=avgScore(s);
   if(avg!=null){ setF(11,'bold',INK); doc.text(`Average score: ${avg.toFixed(1)} / 10`,M,y); y+=10; } else y+=4;
@@ -2191,22 +2283,28 @@ function makePdf(s,mapDataUrl){
   if(forcedDone(s)){ const L=wrap(`Survey ended early: ${s.completeOverride.reason}`,CW,10); ensure(L.length*5+2); setF(10,'bold',AMBER); doc.text(L,M,y); y+=L.length*5+3; }
   row('Hotel name',s.hotel); row('City code',s.city); row('Hodaco Rep',s.reps); row('NI Rep',s.inspector); row('Stayed overnight',s.stayed?'Yes':'No');
   // Map: hotel location and route to the airport
-  if(mapDataUrl){
+  const maps = typeof mapDataUrl==='string' ? {main:mapDataUrl} : (mapDataUrl||{});
+  if(maps.main){
     const mapW=CW, mapH=mapW*320/640;
     ensure(mapH+14);
     y+=4;
     try{
-      doc.addImage(mapDataUrl,'PNG',M,y,mapW,mapH);
+      doc.addImage(maps.main,'PNG',M,y,mapW,mapH);
+      if(maps.zoom){ const iw=56, ix=M+mapW-iw-3, iy=y+mapH-iw-3;
+        doc.setFillColor(255,255,255); doc.rect(ix-1.2,iy-1.2,iw+2.4,iw+2.4,'F');
+        try{ doc.addImage(maps.zoom,'PNG',ix,iy,iw,iw); }catch(e){}
+        doc.setDrawColor(...KLMBLUE); doc.setLineWidth(.4); doc.rect(ix-1.2,iy-1.2,iw+2.4,iw+2.4); doc.setLineWidth(.2); }
       y+=mapH+4;
-      setF(8,'normal',MUTED); doc.text(`H = hotel, A = ${(s.city||'').trim()} airport${s.f.driveTime?' — driving time '+s.f.driveTime:''}`,M,y);
+      setF(8,'normal',MUTED); doc.text(`H = hotel, A = ${(s.city||'').trim()} airport${s.f.driveTime?' — driving time '+s.f.driveTime:''}${maps.zoom?'. Inset: close-up of the hotel area':''}`,M,y);
       y+=8;
     }catch(e){}
   }
   // Findings summary
   const bullet=(text,col)=>{ const L=wrap(text,CW-6,9.5); ensure(L.length*4.6+2);
       doc.setFillColor(...col); doc.circle(M+1.2,y+2.8,1,'F'); setF(9.5,'normal'); doc.text(L,M+5,y+4); y+=L.length*4.6+1.5; };
-  if(fl.length||nFind.length){ y+=4; ensure(12); setF(12,'bold'); doc.text('Findings',M,y+4); y+=8;
-    fl.forEach(f=>bullet(`${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`,RED));
+  if(nc.length){ y+=4; ensure(12); setF(12,'bold',RED); doc.text(`Non-compliant (${nc.length})`,M,y+4); y+=8;
+    nc.forEach(x=>bullet(`${x.label}: ${x.text}`,RED)); }
+  if(nFind.length){ y+=4; ensure(12); setF(12,'bold'); doc.text(`Findings (${nFind.length})`,M,y+4); y+=8;
     nFind.forEach(n=>bullet(`${n.label}: ${n.text}`,AMBER)); }
   if(nFyi.length){ y+=4; ensure(12); setF(12,'bold'); doc.text('FYI',M,y+4); y+=8;
     nFyi.forEach(n=>bullet(`${n.label}: ${n.text}`,MUTED)); }
@@ -2218,7 +2316,7 @@ function makePdf(s,mapDataUrl){
     setF(9.5,'bold',cc); doc.text(cv,W-M,y,{align:'right'}); y+=4;
     sec.fields.forEach(f=>{
       if(f.id==='otherInfo') return;
-      row(f.label, valueText(s,f), {red:isFlag(s,f)});
+      row(f.label, valueText(s,f), {red:ncIds.has(f.id)});
       if(s.notes[f.id]){ const N=wrap(`${typeLabel(noteTypeOf(s,f.id))}: ${s.notes[f.id]}`,VW,8.5); ensure(N.length*4+1); setF(8.5,'italic',MUTED); doc.text(N,VX,y+2.5); y+=N.length*4+1.5; }
     });
     allNotes(s).filter(n=>n.kind==='free'&&n.sec===sec.id).forEach(n=>row(`Note (${typeLabel(n.type)})`,n.text));
@@ -2470,7 +2568,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='3.7.0';
+const APP_VERSION='3.10.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
@@ -2503,25 +2601,26 @@ function rtfEsc(text){
 }
 const RTF_HEAD='{\\rtf1\\ansi\\ansicpg1252\\deff0\n{\\fonttbl{\\f0\\fswiss Calibri;}}\n{\\colortbl;\\red19\\green35\\blue58;\\red31\\green122\\blue92;\\red194\\green65\\blue59;\\red91\\green107\\blue128;\\red136\\green136\\blue136;}\n\\f0\n';
 function makeWordRtf(s){
-  const fl=flags(s), avg=avgScore(s), nFind=extraNotes(s,'finding'), nFyi=extraNotes(s,'fyi');
+  const fl=flags(s), avg=avgScore(s), nFind=extraNotes(s,'finding'), nFyi=extraNotes(s,'fyi'), nc=ncList(s), ncIds=new Set(nonCompliantFields(s).map(f=>f.id));
   let body='';
   body+=`{\\pard\\sa120\\fs32\\b\\cf1 ${rtfEsc(title(s))}\\par}\n`;
   body+=`{\\pard\\sa160\\fs20 ${rtfEsc([s.city,dateNL(s.date),s.reps,s.inspector].filter(Boolean).join(', '))}\\par}\n`;
-  const capLine=`CAO compliant: ${caoText(s)}   |   ${fl.length+nFind.length} finding${fl.length+nFind.length===1?'':'s'}${avg!=null?`   |   Average score: ${avg.toFixed(1)}/10`:''}`;
+  const capLine=`CAO compliant: ${caoText(s)}   |   ${nc.length} non-compliant   |   ${nFind.length} finding${nFind.length===1?'':'s'}${avg!=null?`   |   Average score: ${avg.toFixed(1)}/10`:''}`;
   body+=`{\\pard\\sa200\\fs20\\b ${rtfEsc(capLine)}\\par}\n`;
   if(s.stayed) body+=`{\\pard\\sa120\\fs20 Stayed overnight in this hotel: Yes\\par}\n`;
   if(forcedDone(s)) body+=`{\\pard\\sa200\\fs20\\b Survey ended early: ${rtfEsc(s.completeOverride.reason)}\\par}\n`;
-  body+=`{\\pard\\sa100\\fs24\\b\\cf1 Findings\\par}\n`;
   const rtfBullet=line=>{ body+=`{\\pard\\li240\\sa60\\fs20 \\u8226? ${rtfEsc(line)}\\par}\n`; };
-  if(fl.length||nFind.length){ fl.forEach(f=>rtfBullet(`${f.label}: ${valueText(s,f)}${s.notes[f.id]?' - '+s.notes[f.id]:''}`)); nFind.forEach(n=>rtfBullet(`${n.label}: ${n.text}`)); }
-  else body+=`{\\pard\\sa200\\fs20 No findings.\\par}\n`;
+  body+=`{\\pard\\sa100\\fs24\\b\\cf3 Non-compliant\\par}\n`;
+  if(nc.length) nc.forEach(x=>rtfBullet(`${x.label}: ${x.text}`)); else body+=`{\\pard\\sa200\\fs20 Nothing non-compliant.\\par}\n`;
+  body+=`{\\pard\\sb120\\sa100\\fs24\\b\\cf1 Findings\\par}\n`;
+  if(nFind.length) nFind.forEach(n=>rtfBullet(`${n.label}: ${n.text}`)); else body+=`{\\pard\\sa200\\fs20 No findings.\\par}\n`;
   if(nFyi.length){ body+=`{\\pard\\sb120\\sa100\\fs24\\b\\cf1 FYI\\par}\n`; nFyi.forEach(n=>rtfBullet(`${n.label}: ${n.text}`)); }
   SECTIONS.forEach(sec=>{
     const cv=sectionCompliance(s,sec); const cIdx=cv==='Non-compliant'?3:cv==='Compliant'?2:4;
     body+=`{\\pard\\sb200\\sa100\\fs24\\b\\cf1 ${rtfEsc(sec.name)}  \\fs18\\b0\\cf${cIdx} (${rtfEsc(cv)})\\par}\n`;
     sec.fields.forEach(f=>{
       if(f.id==='otherInfo') return;
-      const flagged=isFlag(s,f), val=valueText(s,f)||'-', note=s.notes[f.id]?` (${typeLabel(noteTypeOf(s,f.id))}: ${s.notes[f.id]})`:'';
+      const flagged=ncIds.has(f.id), val=valueText(s,f)||'-', note=s.notes[f.id]?` (${typeLabel(noteTypeOf(s,f.id))}: ${s.notes[f.id]})`:'';
       body+=`{\\pard\\sa60\\fs20${flagged?'\\cf3\\b':''} ${rtfEsc(f.label)}: ${rtfEsc(val)}${rtfEsc(note)}\\par}\n`;
     });
     allNotes(s).filter(n=>n.kind==='free'&&n.sec===sec.id).forEach(n=>{ body+=`{\\pard\\sa60\\fs20\\i Note (${typeLabel(n.type)}): ${rtfEsc(n.text)}\\par}\n`; });
