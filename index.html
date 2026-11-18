@@ -87,6 +87,12 @@ textarea{resize:vertical;min-height:72px}
 
 .summary{display:flex;align-items:center;gap:16px}
 .summary .txt{flex:1}
+.stamp-wrap{position:relative;flex:none}
+button.stamp{border:0;padding:0;cursor:pointer;font-family:inherit;-webkit-tap-highlight-color:transparent}
+button.stamp:active{transform:scale(.96)}
+.stamp-badge{position:absolute;right:-2px;bottom:-2px;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:2px solid currentColor;color:var(--muted);font-size:15px;font-weight:700;line-height:1;pointer-events:none}
+.stamp-badge[data-on="1"]{background:var(--s5);border-color:var(--s5);color:#fff}
+.stamp-badge[hidden]{display:none}
 .progress{height:6px;border-radius:99px;background:var(--soft);overflow:hidden;margin-top:8px}
 .progress i{display:block;height:100%;background:var(--accent);transition:width .2s}
 
@@ -763,8 +769,9 @@ function renderHome(){
 function progHTML(s){ const left=TOTAL-doneCount(s);
   return left>0 ? `<button type="button" class="link" data-a="${missingOnly?'showall':'showmissing'}" style="padding:0;text-align:left">${progLabel(s)}</button>` : progLabel(s); }
 function forceHTML(s){
-  if(forcedDone(s)) return `<b>Marked as complete:</b> ${esc(s.completeOverride.reason)} · <button type="button" class="link" data-a="undoforce" style="padding:0">Undo</button>`;
-  return TOTAL-doneCount(s)>0 ? `<button type="button" class="link" data-a="forcecomplete" style="padding:0">Finish without answering everything…</button>` : ''; }
+  return forcedDone(s) ? `<b>Marked as complete:</b> ${esc(s.completeOverride.reason)}` : ''; }
+/* Small badge on the status circle: outline = can be marked complete by tapping, filled = marked complete */
+const badgeAttrs = s=>forcedDone(s)?'data-on="1"':(TOTAL-doneCount(s)>0?'data-on="0"':'hidden');
 function renderEdit(){
   const s=cur(); if(!s){view={name:'home'};return render();}
   if(missingFor!==s.id){ missingOnly=false; missingFor=s.id; }
@@ -772,7 +779,7 @@ function renderEdit(){
   const v=verdict(s);
   $('#app').innerHTML = `
     <section class="panel">
-      <div class="summary"><span class="stamp big" id="ovStamp" data-s="${v.k}">${v.t}</span>
+      <div class="summary"><span class="stamp-wrap"><button type="button" class="stamp big" id="ovStamp" data-a="stamptap" data-s="${v.k}" aria-label="Survey status">${v.t}</button><span class="stamp-badge" id="ovBadge" ${badgeAttrs(s)}>✓</span></span>
         <div class="txt"><b id="ovWord">${v.w}</b>
         <p class="hint" id="progTxt">${progHTML(s)}</p>
         <div class="progress"><i id="progBar" style="width:${doneCount(s)/TOTAL*100}%"></i></div>
@@ -1363,6 +1370,7 @@ function refreshStats(){
   const s=cur(); if(!s||view.name!=='edit') return; const v=verdict(s);
   const st=$('#ovStamp'); st.dataset.s=v.k; st.textContent=v.t; $('#ovWord').textContent=v.w;
   $('#progTxt').innerHTML=progHTML(s); const ft=$('#forceTxt'); if(ft) ft.innerHTML=forceHTML(s);
+  const bd=$('#ovBadge'); if(bd){ bd.hidden=!forcedDone(s)&&TOTAL-doneCount(s)<=0; bd.dataset.on=forcedDone(s)?'1':'0'; }
   $('#progBar').style.width=doneCount(s)/TOTAL*100+'%';
   $('#chips').innerHTML=chipsHTML(s);
   SECTIONS.forEach(sec=>{ const el=document.querySelector(`[data-meta="${sec.id}"]`); if(el) el.innerHTML=metaHTML(s,sec); });
@@ -1876,7 +1884,15 @@ document.addEventListener('click', async e=>{
   else if(a==='sendfeedback'){ sendFeedback(); }
   else if(a==='showmissing'){ missingOnly=true; missingFor=s.id; view={name:'edit',id:s.id}; render(); }
   else if(a==='showall'){ missingOnly=false; render(); }
-  else if(a==='forcecomplete'){
+  else if(a==='stamptap' && (forcedDone(s)||TOTAL-doneCount(s)<=0)){
+    if(forcedDone(s)){ showModal(`<h2>Marked as complete</h2>
+      <p>This survey was finished without answering every question.</p>
+      <p style="margin-top:8px"><b>Reason:</b> ${esc(s.completeOverride.reason)}</p>
+      <div class="actions" style="margin-top:12px">
+        <button type="button" class="btn" data-a="undoforce">Undo, continue the survey</button>
+        <button type="button" class="btn primary" data-a="modalcancel">Close</button></div>`); return; }
+    toast('All questions are answered.'); }
+  else if(a==='forcecomplete'||a==='stamptap'){
     showModal(`<h2>Finish without answering everything</h2>
       <p>Use this when the survey stops early, for example when you walk in and see right away that this hotel will not work. Open questions are then no longer required, and the report says why.</p>
       <div class="opts" role="group" id="fcOpts" style="flex-wrap:wrap;margin-top:12px">${COMPLETE_REASONS.map(r=>`<button type="button" data-a="fcreason" data-v="${esc(r)}" aria-pressed="false">${esc(r)}</button>`).join('')}</div>
@@ -1889,7 +1905,7 @@ document.addEventListener('click', async e=>{
     if(!pick && !txt){ toast('Choose a reason or type an explanation.'); return; }
     const reason=[pick==='Other'?'':pick, txt].filter(Boolean).join(': ')||txt;
     s.completeOverride={reason, at:Date.now()}; touch(s); hideModal(); refreshStats(); toast('Survey marked as complete'); }
-  else if(a==='undoforce'){ s.completeOverride=null; touch(s); refreshStats(); }
+  else if(a==='undoforce'){ s.completeOverride=null; touch(s); hideModal(); refreshStats(); toast('Survey is open again'); }
   else if(a==='openfield'){ openField(s,b.dataset.id); }
   else if(a==='notetype'||a==='freetype'){ const id=b.dataset.id, v=b.dataset.v;
     if(a==='notetype'){ s.noteType=s.noteType||{}; s.noteType[id]=v; if(s.compliance) delete s.compliance[id]; } else { const n=(s.freeNotes||[]).find(x=>x.id===id); if(n) n.type=v; }
@@ -2587,7 +2603,7 @@ async function sharePdf(s){
     }catch(e){ if(e.name!=='AbortError') toast('Sharing does not work here. Use Save PDF and Compose mail instead.'); }
   } else toast('Sharing with attachment does not work in this browser. Use Save PDF and then Compose mail.');
 }
-const APP_VERSION='3.11.0';
+const APP_VERSION='3.12.0';
 let downloads=null;
 async function savePdf(s){
   const mapDataUrl=await getHotelMapDataUrl(s);
